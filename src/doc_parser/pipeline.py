@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from doc_parser.config import get_settings
 from doc_parser.post_processor import assemble_markdown, save_to_json
+from doc_parser.utils.pdf_utils import count_pdf_pages
 
 logger = logging.getLogger(__name__)
 
@@ -73,14 +74,15 @@ class ParseResult:
 
     @classmethod
     def from_sdk_result(cls, raw: Any, source_file: str) -> ParseResult:
-        """Build a ParseResult from a raw GLM-OCR SDK response.
+        """Build a ParseResult from a raw GLM-OCR SDK PipelineResult.
 
-        The SDK response structure is expected to be a dict or object with
-        page-level results, each containing a list of element dicts with
-        'label', 'text', 'bbox', 'score', and optionally 'reading_order'.
+        The SDK returns a PipelineResult with:
+        - json_result: list[list[dict]] — one inner list per page, each dict has
+          'index', 'label', 'content', 'bbox_2d'
+        - markdown_result: list[str] — pre-assembled markdown per page
 
         Args:
-            raw: Raw response from the GlmOcr.parse() call.
+            raw: PipelineResult from GlmOcr.parse().
             source_file: Path to the source document.
 
         Returns:
@@ -88,38 +90,32 @@ class ParseResult:
         """
         pages: list[PageResult] = []
 
-        # Handle both dict-like and attribute-based SDK responses
-        raw_pages = raw if isinstance(raw, list) else getattr(raw, "pages", [raw])
+        # json_result is a list-of-lists: [page][element]
+        raw_pages: list[list[dict[str, Any]]] = getattr(raw, "json_result", [])
+        # markdown_result is a list of pre-assembled markdown strings, one per page
+        raw_markdowns: list[str] = getattr(raw, "markdown_result", [])
 
-        for page_idx, raw_page in enumerate(raw_pages):
+        for page_idx, raw_elements in enumerate(raw_pages):
             page_num = page_idx + 1
-            raw_elements = (
-                raw_page.get("elements", [])
-                if isinstance(raw_page, dict)
-                else getattr(raw_page, "elements", [])
-            )
-
             elements: list[ParsedElement] = []
-            for order_idx, raw_el in enumerate(raw_elements):
-                if isinstance(raw_el, dict):
-                    el = ParsedElement(
-                        label=raw_el.get("label", "paragraph"),
-                        text=raw_el.get("text", ""),
-                        bbox=raw_el.get("bbox", [0.0, 0.0, 1.0, 1.0]),
-                        score=raw_el.get("score", 1.0),
-                        reading_order=raw_el.get("reading_order", order_idx),
-                    )
-                else:
-                    el = ParsedElement(
-                        label=getattr(raw_el, "label", "paragraph"),
-                        text=getattr(raw_el, "text", ""),
-                        bbox=getattr(raw_el, "bbox", [0.0, 0.0, 1.0, 1.0]),
-                        score=getattr(raw_el, "score", 1.0),
-                        reading_order=getattr(raw_el, "reading_order", order_idx),
-                    )
+
+            for raw_el in raw_elements:
+                bbox_2d = raw_el.get("bbox_2d", [0, 0, 1, 1])
+                el = ParsedElement(
+                    label=raw_el.get("label", "paragraph"),
+                    text=raw_el.get("content", ""),
+                    bbox=[float(v) for v in bbox_2d],
+                    score=1.0,  # SDK does not provide a confidence score
+                    reading_order=raw_el.get("index", len(elements)),
+                )
                 elements.append(el)
 
-            markdown = assemble_markdown(elements)
+            # Prefer the SDK's pre-assembled markdown; fall back to our assembler
+            if page_idx < len(raw_markdowns) and raw_markdowns[page_idx]:
+                markdown = raw_markdowns[page_idx]
+            else:
+                markdown = assemble_markdown(elements)
+
             pages.append(PageResult(page_num=page_num, elements=elements, markdown=markdown))
 
         total_elements = sum(len(p.elements) for p in pages)
@@ -177,7 +173,17 @@ class DocumentParser:
             raise FileNotFoundError(f"File not found: {file_path}")
 
         logger.info("Parsing file: %s", file_path)
-        raw = self._parser.parse(str(file_path))
+
+        # For PDFs, explicitly pass the full page range so all pages are processed.
+        # Without start_page_id/end_page_id the SDK defaults to page 1 only.
+        parse_kwargs: dict[str, Any] = {}
+        if file_path.suffix.lower() == ".pdf":
+            total_pages = count_pdf_pages(file_path)
+            parse_kwargs["start_page_id"] = 0
+            parse_kwargs["end_page_id"] = total_pages - 1
+            logger.info("PDF has %d pages — parsing all", total_pages)
+
+        raw = self._parser.parse(str(file_path), **parse_kwargs)
         result = ParseResult.from_sdk_result(raw, source_file=str(file_path))
         logger.info(
             "Parsed %s: %d pages, %d elements",
