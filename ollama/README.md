@@ -124,17 +124,17 @@ depending on your hardware (GPU vs CPU).
 
 | Feature | Cloud API | Ollama |
 |---|---|---|
-| Layout detection | PP-DocLayout-V3 (precise bboxes) | Disabled (`enable_layout: false`) |
-| Element labels | `paragraph`, `table`, `figure`, etc. | May be absent or less structured |
-| Text extraction | High quality | High quality (same model) |
-| Speed | Fast (cloud GPU) | Slower (local hardware) |
+| Layout detection | PP-DocLayout-V3 (precise bboxes) | PP-DocLayout-V3 (same, `enable_layout: true`) |
+| Element labels | `paragraph`, `table`, `figure`, etc. | Same label set (`doc_title`, `paragraph_title`, `table`, …) |
+| Text extraction | High quality | High quality (same GLM-OCR 0.9B model) |
+| Speed | Fast (cloud GPU) | 5–30s per page (local CPU/MPS/CUDA) |
 | Cost | API credits | Free (local) |
 | Privacy | Data sent to Z.AI | Fully local |
 
-**Key point:** `enable_layout: false` skips the dedicated layout detection stage.
-The GLM-OCR VLM itself still extracts text and basic structure. For simple documents
-(papers, reports) the Markdown output quality is comparable. For complex layouts
-(multi-column, dense tables) the cloud API will produce better element labelling.
+**Key point:** both backends run the same PP-DocLayout-V3 layout detector and
+GLM-OCR 0.9B text model. The main difference is speed — the cloud API runs on
+dedicated GPUs, while Ollama uses your local hardware. Output quality is
+essentially equivalent for most document types.
 
 ---
 
@@ -233,11 +233,44 @@ so Pydantic stores it as an extra field.
 
 ---
 
+## Visualizer (parse directly from the UI)
+
+The Streamlit visualizer supports direct parsing — no need to run `test_parse.py` first:
+
+```bash
+uv run streamlit run ollama/visualize.py
+```
+
+In the sidebar:
+- **"Parse new PDF"** — upload any PDF and click **▶ Parse with Ollama**. A spinner shows
+  while the pipeline runs (~30–60 s). Results appear immediately and are saved to
+  `ollama/output/` automatically.
+- **"Load saved results"** — pick any previously parsed `*_elements.json` file.
+
+---
+
+## Using Ollama in the Main Pipeline
+
+Set `PARSER_BACKEND=ollama` in your `.env` to use Ollama as the parser backend
+in all scripts and the REST API — no `Z_AI_API_KEY` required:
+
+```dotenv
+PARSER_BACKEND=ollama
+# Z_AI_API_KEY not needed
+```
+
+Then run normally:
+
+```bash
+python scripts/parse.py data/raw/paper.pdf --chunks
+python scripts/ingest.py data/raw/paper.pdf
+```
+
+---
+
 ## Next Steps
 
 Once you have verified that local parsing works:
 
 1. Compare the Markdown output with the cloud API output for the same document.
 2. Check if element labels and bboxes are present in the JSON (`--show-elements`).
-3. If results are acceptable, the full pipeline integration can be done in Phase 6
-   by adding an `OLLAMA_MODE=true` env var and selecting this config at runtime.

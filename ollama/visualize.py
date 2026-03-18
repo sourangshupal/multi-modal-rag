@@ -1,7 +1,14 @@
-"""Streamlit app: visualize Ollama/PP-DocLayoutV3 parsed results from JSON files."""
+"""Streamlit app: visualize Ollama/PP-DocLayoutV3 parsed results.
+
+Supports two workflows:
+  1. Load pre-saved results — pick any *_elements.json from ollama/output/
+  2. Parse on the fly    — upload a PDF, click Parse, wait ~30s, see results
+"""
 from __future__ import annotations
 
 import json
+import tempfile
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -19,6 +26,8 @@ st.set_page_config(
 # ── Constants ─────────────────────────────────────────────────────────────────
 RENDER_DPI = 150
 BBOX_SCALE = 1000
+_CONFIG = Path(__file__).parent / "config.yaml"
+OUTPUT_DIR = Path(__file__).parent / "output"
 
 LABEL_COLORS: dict[str, tuple[int, int, int]] = {
     # Shared with cloud app
@@ -49,8 +58,6 @@ LABEL_COLORS: dict[str, tuple[int, int, int]] = {
 }
 DEFAULT_COLOR = (180, 180, 0)  # fallback yellow for unknown labels
 
-OUTPUT_DIR = Path(__file__).parent / "output"
-
 
 def get_color(label: str) -> tuple[int, int, int]:
     return LABEL_COLORS.get(label, DEFAULT_COLOR)
@@ -71,11 +78,7 @@ def render_page(pdf_path: Path, page_num: int) -> Image.Image:
 
 
 def draw_bboxes(img: Image.Image, elements: list[dict]) -> Image.Image:
-    """Draw colored bounding boxes onto the page image.
-
-    bbox_2d values are normalised to 0–1000 range, so we scale them to pixel
-    coords using: pixel_x = bbox_x * image_width / BBOX_SCALE
-    """
+    """Draw colored bounding boxes onto the page image."""
     img = img.copy()
     draw = ImageDraw.Draw(img, "RGBA")
     w, h = img.size
@@ -157,6 +160,33 @@ def find_pdf(stem: str) -> Path | None:
     return candidate if candidate.exists() else None
 
 
+def run_parser(pdf_path: Path) -> tuple[list[list[dict]], str]:
+    """Parse a PDF with the local Ollama pipeline and return (pages, markdown)."""
+    try:
+        from glmocr import GlmOcr  # type: ignore[import]
+    except ImportError as e:
+        raise ImportError(
+            "glmocr not installed. Run: uv pip install -e '.[layout]'"
+        ) from e
+
+    parser = GlmOcr(config_path=str(_CONFIG))
+    result = parser.parse(str(pdf_path), save_layout_visualization=False)
+
+    pages: list[list[dict]] = result.json_result if isinstance(result.json_result, list) else []
+    md: str = result.markdown_result or ""
+    return pages, md
+
+
+def save_result(stem: str, pages: list[list[dict]], md: str) -> Path:
+    """Persist parsed results to ollama/output/ and return the JSON path."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    json_path = OUTPUT_DIR / f"{stem}_elements.json"
+    json_path.write_text(json.dumps(pages, indent=2, ensure_ascii=False), encoding="utf-8")
+    if md:
+        (OUTPUT_DIR / f"{stem}.md").write_text(md, encoding="utf-8")
+    return json_path
+
+
 # ── Session state ─────────────────────────────────────────────────────────────
 
 if "pages" not in st.session_state:
@@ -171,54 +201,95 @@ if "json_path" not in st.session_state:
 # ── UI ────────────────────────────────────────────────────────────────────────
 
 st.title("🦙 Ollama Document Visualizer")
-st.caption("Visualize PP-DocLayoutV3 parsed results from saved JSON files")
+st.caption("Parse any PDF locally with PP-DocLayoutV3 + GLM-OCR via Ollama, or load saved results")
 
-# Sidebar
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.header("Load Results")
+
+    # ── Tab 1: Parse a new PDF on the fly ─────────────────────────────────────
+    st.header("Parse new PDF")
+    uploaded_pdf = st.file_uploader(
+        "Upload a PDF to parse",
+        type=["pdf"],
+        key="pdf_uploader",
+        help="Requires Ollama running locally with glm-ocr:latest pulled",
+    )
+
+    if uploaded_pdf is not None:
+        if st.button("▶ Parse with Ollama", type="primary", use_container_width=True):
+            stem = Path(uploaded_pdf.name).stem
+
+            # Write upload to a temp file so GlmOcr can read it by path
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(uploaded_pdf.read())
+                tmp_path = Path(tmp.name)
+
+            with st.spinner(f"Parsing {uploaded_pdf.name} — this may take 30–60 s…"):
+                t0 = time.perf_counter()
+                try:
+                    pages, md = run_parser(tmp_path)
+                    elapsed = time.perf_counter() - t0
+                    json_path = save_result(stem, pages, md)
+                    st.session_state.pages = pages
+                    st.session_state.markdown = md
+                    st.session_state.pdf_path = tmp_path
+                    st.session_state.json_path = json_path
+                    st.success(
+                        f"Done in {elapsed:.1f}s — "
+                        f"{len(pages)} page(s), "
+                        f"{sum(len(p) for p in pages)} elements"
+                    )
+                except Exception as exc:
+                    st.error(f"Parse failed: {exc}")
+                    st.info(
+                        "Check that Ollama is running (`ollama serve`) "
+                        "and the model is pulled (`ollama pull glm-ocr:latest`)."
+                    )
+
+    st.divider()
+
+    # ── Tab 2: Load pre-saved results ─────────────────────────────────────────
+    st.header("Load saved results")
 
     json_files = sorted(OUTPUT_DIR.glob("*_elements.json")) if OUTPUT_DIR.exists() else []
 
     if not json_files:
-        st.warning(f"No `*_elements.json` files found in `{OUTPUT_DIR}`.")
-        st.stop()
-
-    selected_name = st.selectbox(
-        "JSON file",
-        options=[f.name for f in json_files],
-        index=0,
-    )
-    selected_json = OUTPUT_DIR / selected_name
-
-    # Load data when selection changes
-    if st.session_state.json_path != selected_json:
-        st.session_state.json_path = selected_json
-        st.session_state.pages, st.session_state.markdown = load_result(selected_json)
-
-        # Auto-detect PDF from stem
-        stem = selected_name.replace("_elements.json", "")
-        st.session_state.pdf_path = find_pdf(stem)
-
-    st.divider()
-    st.header("PDF Source")
-
-    if st.session_state.pdf_path:
-        st.success(f"Auto-detected: `{st.session_state.pdf_path.name}` ✓")
+        st.info("No saved results yet. Parse a PDF above to create some.")
     else:
-        st.info("PDF not found in `data/raw/`. Upload it below.")
-        uploaded = st.file_uploader("Upload PDF", type=["pdf"])
-        if uploaded:
-            import tempfile
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-            tmp.write(uploaded.read())
-            tmp.flush()
-            st.session_state.pdf_path = Path(tmp.name)
+        selected_name = st.selectbox(
+            "JSON file",
+            options=[f.name for f in json_files],
+            index=0,
+        )
+        selected_json = OUTPUT_DIR / selected_name
+
+        if st.session_state.json_path != selected_json:
+            if st.button("Load", use_container_width=True):
+                st.session_state.json_path = selected_json
+                st.session_state.pages, st.session_state.markdown = load_result(selected_json)
+                stem = selected_name.replace("_elements.json", "")
+                st.session_state.pdf_path = find_pdf(stem)
+
+        # PDF source for saved results (if not already set from parse)
+        if (
+            st.session_state.json_path == selected_json
+            and st.session_state.pdf_path is None
+        ):
+            st.info("PDF not found in `data/raw/`. Upload it below to see page renders.")
+            fallback = st.file_uploader("Upload PDF for page rendering", type=["pdf"], key="pdf_fallback")
+            if fallback:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    tmp.write(fallback.read())
+                    st.session_state.pdf_path = Path(tmp.name)
 
     st.divider()
+
+    # ── Display options ────────────────────────────────────────────────────────
     st.header("Display options")
     show_content = st.checkbox("Show element content", value=False)
     show_markdown = st.checkbox("Show page Markdown", value=False)
     show_polygons = st.checkbox("Show polygons (precise outlines)", value=False)
+
 
 # ── Main area ─────────────────────────────────────────────────────────────────
 
@@ -226,7 +297,7 @@ pages: list[list[dict]] | None = st.session_state.pages
 pdf_path: Path | None = st.session_state.pdf_path
 
 if pages is None:
-    st.info("Select a JSON file from the sidebar to get started.")
+    st.info("Upload and parse a PDF, or load a saved result from the sidebar.")
     st.stop()
 
 total_pages = len(pages)
@@ -296,4 +367,4 @@ with st.expander("Full document Markdown", expanded=False):
     if md:
         st.markdown(md)
     else:
-        st.info("_No markdown file found alongside the JSON._")
+        st.info("_No markdown available._")
