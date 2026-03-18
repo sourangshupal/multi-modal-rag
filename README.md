@@ -726,6 +726,6 @@ All `bbox_2d` values are normalized to 0–1000. Formula: `pixel_x = bbox_x × i
 
 <div align="center">
 
-**Built with ❤️ · Python 3.12 · uv · OpenAI SDK v2 · Qdrant 1.17 · LlamaIndex · RAGAS**
+**Built with ❤️ · Python 3.12 · uv · OpenAI SDK v2 · Qdrant 1.17 · FastAPI · Streamlit**
 
 </div>
