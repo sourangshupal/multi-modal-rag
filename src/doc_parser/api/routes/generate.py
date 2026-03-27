@@ -72,7 +72,7 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
     context_parts: list[str] = []
     for c in candidates:
         page = c.get("page", "?")
-        text = c.get("caption") or c.get("text", "")
+        text = c.get("text", "") or c.get("caption") or ""
         context_parts.append(f"[page {page}] {text}")
     context = "\n\n".join(context_parts)
 

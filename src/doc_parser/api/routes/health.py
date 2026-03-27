@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from openai import AsyncOpenAI
 
 from doc_parser.api.dependencies import get_openai_client, get_reranker_dep, get_store
-from doc_parser.api.schemas import CollectionsResponse, HealthResponse
+from doc_parser.api.schemas import CollectionsResponse, DeleteCollectionResponse, HealthResponse
 from doc_parser.config import get_settings
 
 router = APIRouter()
@@ -58,3 +58,19 @@ async def list_collections() -> CollectionsResponse:
     response = await store._client.get_collections()
     names = [c.name for c in response.collections]
     return CollectionsResponse(collections=names)
+
+
+@router.delete("/collections/{collection_name}", response_model=DeleteCollectionResponse)
+async def delete_collection(collection_name: str) -> DeleteCollectionResponse:
+    """Permanently delete a Qdrant collection by name.
+
+    This is irreversible — re-ingestion is required to rebuild.
+    Returns 200 with deleted=False if the collection does not exist.
+    """
+    store = get_store()
+    deleted = await store.delete_collection(collection_name)
+    return DeleteCollectionResponse(
+        collection=collection_name,
+        deleted=deleted,
+        message="Collection deleted." if deleted else "Collection not found.",
+    )
