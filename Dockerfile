@@ -8,7 +8,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install uv --no-cache-dir
 
-# Install deps first (layer cache)
+# Install CPU-only PyTorch FIRST so uv doesn't pull the CUDA wheel when
+# resolving glmocr[layout] (torch>=2.10.0). The extra-index-url flag tells
+# pip to prefer the cpu build from the PyTorch index.
+RUN uv pip install --system --no-cache \
+    torch torchvision \
+    --extra-index-url https://download.pytorch.org/whl/cpu
+
+# Install remaining deps (layer cache)
 COPY pyproject.toml .
 RUN uv pip install --system --no-cache -e ".[layout]"
 

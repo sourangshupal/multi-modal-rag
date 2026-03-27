@@ -1,11 +1,12 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
     ports:
       - "8000:8000"
     env_file: .env
     environment:
-      # Override .env — Docker resolves service names as hostnames
       - QDRANT_URL=http://qdrant:6333
     volumes:
       - ./data:/app/data
@@ -16,6 +17,14 @@ services:
     depends_on:
       - qdrant
       - ollama
+    # PP-DocLayoutV3 (runs inside app container) gets GPU access via torch
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   qdrant:
     image: qdrant/qdrant:v1.13.3
@@ -33,6 +42,14 @@ services:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
+    # GLM-OCR (0.9B) offloaded entirely to GPU — ~2 GB VRAM
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   visualizer:
     build:

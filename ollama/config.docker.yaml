@@ -1,0 +1,62 @@
+pipeline:
+  maas:
+    enabled: false          # Disable Z.AI cloud API
+
+  ocr_api:
+    api_host: ollama
+    api_port: 11434
+    api_path: /api/generate   # Ollama's native endpoint (NOT the OpenAI-compat one)
+    model: glm-ocr:latest     # Must match what you pulled
+    api_mode: ollama_generate  # Essential — prevents 502 errors
+    timeout: 1200              # 20 min per page — CPU inference in Docker is slow
+
+  enable_layout: true         # PP-DocLayout-V3 layout detection
+                              # Requires: uv pip install "glmocr[layout]"
+
+  # Bug fix: region_maxsize must be an int (0 = unlimited). SDK default of null
+  # causes Queue(maxsize=None) → TypeError in error handler.
+  region_maxsize: 0
+
+  layout:
+    model_dir: PaddlePaddle/PP-DocLayoutV3_safetensors   # HuggingFace model ID (auto-downloaded ~400 MB)
+    id2label: null            # null = loaded from model weights at runtime
+
+    # label_task_mapping: maps layout labels → pipeline task type.
+    # task_type "abandon" = skip entirely; "ocr"/"table"/"formula"/"algorithm" = run OCR.
+    # Labels from PP-DocLayoutV3: abstract, algorithm, aside_text, chart, content,
+    # formula, doc_title, figure_title, footer, footnote, formula_number, header,
+    # image, number, paragraph_title, reference, reference_content, seal, table,
+    # text, vision_footnote
+    label_task_mapping:
+      ocr:
+        - abstract
+        - aside_text
+        - content
+        - doc_title
+        - figure_title
+        - footnote
+        - paragraph_title
+        - reference
+        - reference_content
+        - text
+        - vision_footnote
+        - chart
+        - image
+        - seal
+      table:
+        - table
+      formula:
+        - formula
+      algorithm:
+        - algorithm
+      abandon:
+        - header
+        - footer
+        - formula_number
+        - number
+
+  result_formatter:
+    output_format: both       # json + markdown
+
+  page_loader:
+    max_tokens: 8192
