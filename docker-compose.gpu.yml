@@ -37,6 +37,12 @@ services:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
+    environment:
+      # Allow 4 concurrent OCR region requests — glm-ocr is ~2 GB VRAM,
+      # 4 parallel slots use ~8 GB leaving 8 GB headroom on a T4 (16 GB).
+      - OLLAMA_NUM_PARALLEL=4
+      # Keep model loaded between requests (no reload overhead per region)
+      - OLLAMA_KEEP_ALIVE=-1
     # GLM-OCR (0.9B) offloaded entirely to GPU — ~2 GB VRAM
     deploy:
       resources:
