@@ -9,11 +9,17 @@ WORKDIR /app
 # Avoid interactive prompts during apt installs
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System deps: Python 3.12, PyMuPDF/OpenCV libs
+# Python 3.12 is not in Ubuntu 22.04 default repos — add deadsnakes PPA first
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.12 python3.12-dev python3-pip \
+    curl software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 python3.12-dev python3.12-distutils \
     libgl1 libglib2.0-0 && \
     rm -rf /var/lib/apt/lists/*
+
+# Bootstrap pip for Python 3.12 (deadsnakes doesn't ship pip directly)
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
 # Make python3.12 the default python
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 && \
