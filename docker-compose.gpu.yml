@@ -8,6 +8,9 @@ services:
     env_file: .env
     environment:
       - QDRANT_URL=http://qdrant:6333
+      # Force PP-DocLayoutV3 to run on CPU — avoids NVRTC JIT issues.
+      # GLM-OCR runs on GPU inside the Ollama container instead.
+      - CUDA_VISIBLE_DEVICES=""
     volumes:
       - ./data:/app/data
       - ./output:/app/output
@@ -17,14 +20,6 @@ services:
     depends_on:
       - qdrant
       - ollama
-    # PP-DocLayoutV3 (runs inside app container) gets GPU access via torch
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
   qdrant:
     image: qdrant/qdrant:v1.13.3
