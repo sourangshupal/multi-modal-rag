@@ -88,6 +88,23 @@ class QdrantDocumentStore:
             },
         )
 
+    async def delete_collection(self, collection_name: str) -> bool:
+        """Delete a Qdrant collection by name.
+
+        Args:
+            collection_name: Name of the collection to delete.
+
+        Returns:
+            True if the collection existed and was deleted, False if not found.
+        """
+        response = await self._client.get_collections()
+        existing = {c.name for c in response.collections}
+        if collection_name not in existing:
+            return False
+        await self._client.delete_collection(collection_name)
+        logger.info("Deleted collection '%s'", collection_name)
+        return True
+
     async def upsert_chunks(
         self,
         chunks: list["Chunk"],

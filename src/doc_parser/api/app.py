@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from loguru import logger
 
 from doc_parser.api.middleware import LoggingMiddleware
+from doc_parser.api.routes.generate import router as generate_router
 from doc_parser.api.routes.health import router as health_router
 from doc_parser.api.routes.ingest import router as ingest_router
 from doc_parser.api.routes.search import router as search_router
@@ -21,7 +22,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
     setup_logging(settings.log_level, settings.log_json)
     logger.info(
-        "Starting doc-parser API | backend={} | collection={}",
+        "Starting doc-parser API | parser={} | backend={} | collection={}",
+        settings.parser_backend,
         settings.reranker_backend,
         settings.qdrant_collection_name,
     )
@@ -41,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router, tags=["health"])
     app.include_router(ingest_router, prefix="/ingest", tags=["ingest"])
     app.include_router(search_router, prefix="/search", tags=["search"])
+    app.include_router(generate_router, prefix="/generate", tags=["generate"])
     return app
 
 
