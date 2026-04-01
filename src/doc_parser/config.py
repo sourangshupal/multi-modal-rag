@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: SecretStr | None = None
+    openai_base_url: str | None = None
     openai_llm_model: str = "gpt-4o"
 
     # Embedding (provider-agnostic)
@@ -40,7 +41,7 @@ class Settings(BaseSettings):
     qdrant_collection_name: str = "documents"
 
     # Reranker
-    reranker_backend: str = "openai"  # "jina" | "openai" | "bge" | "qwen"
+    reranker_backend: str = "qwen"  # "jina" | "openai" | "bge" | "qwen"
     reranker_top_n: int = 5
     jina_api_key: SecretStr | None = None
 
