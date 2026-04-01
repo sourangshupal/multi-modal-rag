@@ -1,16 +1,16 @@
-"""Unit tests for image_captioner — table JSON parsing, validation, and context helpers."""
+"""Unit tests for image_captioner — table JSON parsing, validation, and crop helpers."""
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from doc_parser.chunker import Chunk  # noqa: E402
 from doc_parser.ingestion.image_captioner import (  # noqa: E402
-    _get_surrounding_context,
-    _parse_image_response,
+    _crop_image_chunk,
     _parse_table_json_response,
     _validate_table_extraction,
 )
@@ -123,86 +123,60 @@ class TestValidateTableExtraction:
         assert _validate_table_extraction("raw", 10, 1, md) is False
 
 
-# ── _parse_image_response ────────────────────────────────────────────────────
+# ── _crop_image_chunk ────────────────────────────────────────────────────────
 
 
-class TestParseImageResponse:
-    def test_extracts_caption_line(self):
-        text = (
-            "TYPE: DIAGRAM\n"
-            "CAPTION: A flowchart showing the data pipeline.\n"
-            "DETAIL:\n- Step 1\n"
-            "STRUCTURE:\n- Module A\n"
+class TestCropImageChunk:
+    """Tests for _crop_image_chunk — no real PDF needed (mocked pdf_page_to_image)."""
+
+    def _make_image_chunk(self, bbox=(100, 100, 500, 400), page: int = 1) -> Chunk:
+        return Chunk(
+            text="Figure 1: Architecture",
+            chunk_id="img_chunk_1",
+            page=page,
+            element_types=["image"],
+            bbox=bbox,
+            source_file="test.pdf",
+            is_atomic=True,
+            modality="image",
         )
-        caption, full = _parse_image_response(text)
-        assert caption == "A flowchart showing the data pipeline."
-        assert "TYPE: DIAGRAM" in full
 
-    def test_fallback_when_no_caption_line(self):
-        text = "Just some raw description of the figure without labels."
-        caption, full = _parse_image_response(text)
-        assert caption == text[:200]
-        assert full == text
+    def _make_mock_page_image(self, width: int = 1000, height: int = 1400):
+        """Return a mock PIL Image-like object."""
+        from PIL import Image
+        img = Image.new("RGB", (width, height), color=(255, 255, 255))
+        return img
 
-    def test_empty_text(self):
-        caption, full = _parse_image_response("")
-        assert caption == ""
-        assert full == ""
+    def test_returns_base64_string_on_valid_crop(self):
+        chunk = self._make_image_chunk(bbox=(0, 0, 500, 500))
+        mock_img = self._make_mock_page_image()
+        with patch(
+            "doc_parser.ingestion.image_captioner.pdf_page_to_image",
+            return_value=mock_img,
+        ):
+            result = _crop_image_chunk(chunk, Path("fake.pdf"))
+        assert result is not None
+        # Must be a valid base64 string
+        import base64
+        decoded = base64.b64decode(result)
+        assert decoded[:8] == b"\x89PNG\r\n\x1a\n"  # PNG magic bytes
 
+    def test_returns_none_for_tiny_crop(self):
+        # bbox that maps to less than _MIN_CROP_SIZE_PX in both dimensions
+        chunk = self._make_image_chunk(bbox=(0, 0, 1, 1))  # 1x1 pixel at 1000px page
+        mock_img = self._make_mock_page_image(width=1000, height=1000)
+        with patch(
+            "doc_parser.ingestion.image_captioner.pdf_page_to_image",
+            return_value=mock_img,
+        ):
+            result = _crop_image_chunk(chunk, Path("fake.pdf"))
+        assert result is None
 
-# ── _get_surrounding_context ─────────────────────────────────────────────────
-
-
-class TestGetSurroundingContext:
-    def test_extracts_adjacent_text_chunks(self):
-        chunks = [
-            _make_chunk("Before text.", modality="text", page=1),
-            _make_chunk("", modality="image", page=1),
-            _make_chunk("After text.", modality="text", page=1),
-        ]
-        ctx = _get_surrounding_context(chunks, 1)
-        assert "Before text." in ctx
-        assert "After text." in ctx
-
-    def test_skips_non_text_chunks(self):
-        chunks = [
-            _make_chunk("", modality="table", page=1),
-            _make_chunk("", modality="image", page=1),
-            _make_chunk("", modality="formula", page=1),
-        ]
-        ctx = _get_surrounding_context(chunks, 1)
-        assert ctx == ""
-
-    def test_skips_distant_pages(self):
-        chunks = [
-            _make_chunk("Far away page.", modality="text", page=1),
-            _make_chunk("", modality="image", page=5),
-            _make_chunk("Also far.", modality="text", page=10),
-        ]
-        ctx = _get_surrounding_context(chunks, 1)
-        assert ctx == ""
-
-    def test_handles_first_chunk(self):
-        chunks = [
-            _make_chunk("", modality="image", page=1),
-            _make_chunk("After.", modality="text", page=1),
-        ]
-        ctx = _get_surrounding_context(chunks, 0)
-        assert "After." in ctx
-
-    def test_handles_last_chunk(self):
-        chunks = [
-            _make_chunk("Before.", modality="text", page=1),
-            _make_chunk("", modality="image", page=1),
-        ]
-        ctx = _get_surrounding_context(chunks, 1)
-        assert "Before." in ctx
-
-    def test_truncates_long_context(self):
-        chunks = [
-            _make_chunk("A" * 500, modality="text", page=1),
-            _make_chunk("", modality="image", page=1),
-            _make_chunk("B" * 500, modality="text", page=1),
-        ]
-        ctx = _get_surrounding_context(chunks, 1, max_chars=100)
-        assert len(ctx) <= 200  # max_chars * 2
+    def test_returns_none_on_exception(self):
+        chunk = self._make_image_chunk()
+        with patch(
+            "doc_parser.ingestion.image_captioner.pdf_page_to_image",
+            side_effect=RuntimeError("PDF read error"),
+        ):
+            result = _crop_image_chunk(chunk, Path("fake.pdf"))
+        assert result is None
