@@ -6,6 +6,7 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from collections import Counter
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from openai import AsyncOpenAI
@@ -292,10 +293,10 @@ class QwenVLEmbedder(BaseEmbedder):
         return await loop.run_in_executor(None, self._embed_images_sync, images_b64)
 
 
-_PROVIDERS: dict[str, type[BaseEmbedder]] = {
+_PROVIDERS: dict[str, Callable[["Settings"], BaseEmbedder]] = {
     "openai": OpenAIEmbedder,
     "gemini": GeminiEmbedder,
-    "qwen": lambda s: QwenVLEmbedder(s.qwen_embedding_model),  # type: ignore[dict-item]
+    "qwen": lambda s: QwenVLEmbedder(s.qwen_embedding_model),
 }
 
 
@@ -373,4 +374,9 @@ async def embed_chunks(
     # Sparse: BM25 from text for all chunks; image chunks with no text get empty vector
     sparse = compute_sparse_vectors([c.text or "" for c in chunks])
 
-    return dense, sparse  # type: ignore[return-value]
+    # Verify all slots were filled (should never happen but guards against future bugs)
+    if any(v is None for v in dense):
+        raise RuntimeError(
+            "BUG: embed_chunks produced unfilled embedding slots — check routing logic"
+        )
+    return dense, sparse  # type: ignore[return-value]  # all slots confirmed non-None above

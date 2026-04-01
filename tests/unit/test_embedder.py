@@ -453,7 +453,7 @@ class TestQwenVLEmbedder:
         async def fake_executor(executor, fn, *args):
             return fake_vectors
 
-        with patch("asyncio.get_event_loop") as mock_loop:
+        with patch("doc_parser.ingestion.embedder.asyncio.get_running_loop") as mock_loop:
             mock_loop.return_value.run_in_executor = fake_executor
             result = await embedder.embed(["hello", "world"])
 
@@ -470,7 +470,7 @@ class TestQwenVLEmbedder:
         async def fake_executor(executor, fn, *args):
             return fake_vectors
 
-        with patch("asyncio.get_event_loop") as mock_loop:
+        with patch("doc_parser.ingestion.embedder.asyncio.get_running_loop") as mock_loop:
             mock_loop.return_value.run_in_executor = fake_executor
             result = await embedder.embed_images(["base64data"])
 

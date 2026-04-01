@@ -38,6 +38,7 @@ qwen = [
     "torch>=2.7.0",
     "qwen-vl-utils>=0.0.14",
     "accelerate>=1.13",
+    "Pillow>=11.0",
 ]
 gemini = [
     "google-genai>=1.0.0",
