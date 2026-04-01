@@ -402,8 +402,9 @@ async def enrich_chunks(
 
     counts: dict[str, int] = defaultdict(int)
 
-    for idx, chunk in enumerate(chunks):
+    for chunk in chunks:
         if chunk.modality == "image":
+            counts["image"] += 1
             if chunk.bbox is not None:
                 b64 = _crop_image_chunk(chunk, pdf_path)
                 if b64 is not None:
@@ -416,7 +417,6 @@ async def enrich_chunks(
                     # Crop too small or failed — treat as placeholder
                     chunk.caption = None
                     chunk.text = chunk.text or "[figure]"
-                counts["image"] += 1
             else:
                 logger.debug("Image chunk %s has no bbox; setting text='[figure]'", chunk.chunk_id)
                 chunk.caption = None

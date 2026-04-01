@@ -1,10 +1,11 @@
 """Unit tests for image_captioner — table JSON parsing, validation, and crop helpers."""
 from __future__ import annotations
 
+import base64
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
@@ -141,7 +142,7 @@ class TestCropImageChunk:
             modality="image",
         )
 
-    def _make_mock_page_image(self, width: int = 1000, height: int = 1400):
+    def _make_test_page_image(self, width: int = 1000, height: int = 1400):
         """Return a mock PIL Image-like object."""
         from PIL import Image
         img = Image.new("RGB", (width, height), color=(255, 255, 255))
@@ -149,7 +150,7 @@ class TestCropImageChunk:
 
     def test_returns_base64_string_on_valid_crop(self):
         chunk = self._make_image_chunk(bbox=(0, 0, 500, 500))
-        mock_img = self._make_mock_page_image()
+        mock_img = self._make_test_page_image()
         with patch(
             "doc_parser.ingestion.image_captioner.pdf_page_to_image",
             return_value=mock_img,
@@ -157,14 +158,13 @@ class TestCropImageChunk:
             result = _crop_image_chunk(chunk, Path("fake.pdf"))
         assert result is not None
         # Must be a valid base64 string
-        import base64
         decoded = base64.b64decode(result)
         assert decoded[:8] == b"\x89PNG\r\n\x1a\n"  # PNG magic bytes
 
     def test_returns_none_for_tiny_crop(self):
         # bbox that maps to less than _MIN_CROP_SIZE_PX in both dimensions
         chunk = self._make_image_chunk(bbox=(0, 0, 1, 1))  # 1x1 pixel at 1000px page
-        mock_img = self._make_mock_page_image(width=1000, height=1000)
+        mock_img = self._make_test_page_image(width=1000, height=1000)
         with patch(
             "doc_parser.ingestion.image_captioner.pdf_page_to_image",
             return_value=mock_img,
