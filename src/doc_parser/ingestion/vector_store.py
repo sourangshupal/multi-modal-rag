@@ -32,7 +32,7 @@ class QdrantDocumentStore:
     """Async wrapper around Qdrant for hybrid-search document ingestion and retrieval.
 
     Uses two named vector spaces:
-    - ``text_dense``: 3072-dim OpenAI text-embedding-3-large (COSINE distance)
+    - ``multimodal_dense``: dense embeddings for both text and image chunks (COSINE distance)
     - ``bm25_sparse``: BM25 sparse vectors from fastembed
     """
 
@@ -75,7 +75,7 @@ class QdrantDocumentStore:
         await self._client.create_collection(
             collection_name=self._collection,
             vectors_config={
-                "text_dense": VectorParams(
+                "multimodal_dense": VectorParams(
                     size=self._settings.embedding_dimensions,
                     distance=Distance.COSINE,
                     hnsw_config=HnswConfigDiff(m=16, ef_construct=100),
@@ -146,7 +146,7 @@ class QdrantDocumentStore:
             points.append(
                 PointStruct(
                     id=str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk.chunk_id)),
-                    vector={"text_dense": dense, "bm25_sparse": sparse},
+                    vector={"multimodal_dense": dense, "bm25_sparse": sparse},
                     payload=payload,
                 )
             )
@@ -200,7 +200,7 @@ class QdrantDocumentStore:
         results = await self._client.query_points(
             collection_name=self._collection,
             prefetch=[
-                Prefetch(query=query_dense, using="text_dense", limit=top_k * 2),
+                Prefetch(query=query_dense, using="multimodal_dense", limit=top_k * 2),
                 Prefetch(query=query_sparse, using="bm25_sparse", limit=top_k * 2),
             ],
             query=FusionQuery(fusion=Fusion.RRF),
