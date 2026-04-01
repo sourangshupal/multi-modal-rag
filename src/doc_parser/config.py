@@ -28,10 +28,11 @@ class Settings(BaseSettings):
     openai_llm_model: str = "gpt-4o"
 
     # Embedding (provider-agnostic)
-    embedding_provider: str = "openai"  # "openai" | "gemini"
+    embedding_provider: str = "openai"  # "openai" | "gemini" | "qwen"
     embedding_model: str = "text-embedding-3-large"
-    embedding_dimensions: int = 3072
+    embedding_dimensions: int = 2048
     gemini_api_key: SecretStr | None = None
+    qwen_embedding_model: str = "Qwen/Qwen3-VL-Embedding-2B"
 
     # Qdrant
     qdrant_url: str = "http://localhost:6333"
