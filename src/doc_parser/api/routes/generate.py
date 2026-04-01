@@ -68,32 +68,64 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
             c.setdefault("rerank_score", None)
         candidates = candidates[:top_n]
 
-    # Build context string from retrieved chunks — modality-aware so the
-    # generation LLM sees full table data, not just the retrieval summary.
-    context_parts: list[str] = []
+    # Build modality-aware context.
+    # - Text/formula/algorithm chunks: plain text in a single context string.
+    # - Image chunks with base64: injected as image_url blocks so the VLM sees pixels.
+    # - Table chunks: full markdown text + table image (if available) for maximum fidelity.
+    text_context_parts: list[str] = []
+    visual_parts: list[dict] = []
+
     for c in candidates:
         page = c.get("page", "?")
         modality = c.get("modality", "text")
+        b64 = c.get("image_base64")
+
         if modality == "table":
             caption = c.get("caption") or ""
             summary = c.get("text") or ""
             if caption and summary:
-                text = f"{summary}\n\nFull table data:\n{caption}"
+                table_text = f"{summary}\n\nFull table data:\n{caption}"
             else:
-                text = caption or summary
+                table_text = caption or summary
+            text_context_parts.append(f"[page {page}, table]\n{table_text}")
+            if b64:
+                visual_parts.append({"type": "text", "text": f"[page {page}, table image:]"})
+                visual_parts.append(
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
+                )
+
+        elif modality == "image" and b64:
+            label = c.get("text") or "[figure]"
+            visual_parts.append({"type": "text", "text": f"[page {page}, figure: {label}]"})
+            visual_parts.append(
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
+            )
+
         else:
             text = c.get("text", "") or c.get("caption") or ""
-        context_parts.append(f"[page {page}] {text}")
-    context = "\n\n".join(context_parts)
+            text_context_parts.append(f"[page {page}] {text}")
 
+    text_context = "\n\n".join(text_context_parts)
     system_prompt = req.system_prompt or _DEFAULT_SYSTEM_PROMPT
+
+    # Use multimodal message content when visuals are present; fall back to
+    # plain string for text-only documents (avoids unnecessary overhead).
+    if visual_parts:
+        preamble = f"Context:\n{text_context}" if text_context else "Context: (see images/tables below)"
+        user_content: str | list[dict] = (
+            [{"type": "text", "text": preamble}]
+            + visual_parts
+            + [{"type": "text", "text": f"\nQuestion: {req.query}"}]
+        )
+    else:
+        user_content = f"Context:\n{text_context}\n\nQuestion: {req.query}"
 
     try:
         completion = await client.chat.completions.create(
             model=settings.openai_llm_model,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {req.query}"},
+                {"role": "user", "content": user_content},
             ],
             max_tokens=req.max_tokens,
             temperature=0.0,

@@ -422,6 +422,13 @@ async def enrich_chunks(
                 chunk.caption = None
                 chunk.text = chunk.text or "[figure]"
         elif chunk.modality == "table":
+            # Crop the table region for visual context — generation LLM can see the
+            # actual table layout (merged cells, multi-level headers) alongside the
+            # extracted markdown. Mirrors the image chunk crop pattern.
+            if chunk.bbox is not None:
+                b64 = _crop_image_chunk(chunk, pdf_path)
+                if b64 is not None:
+                    chunk.image_base64 = b64
             tasks.append(
                 _enrich_table_single(chunk, client, semaphore, model, pdf_path=pdf_path)
             )
