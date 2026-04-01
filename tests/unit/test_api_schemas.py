@@ -14,7 +14,6 @@ from doc_parser.api.schemas import (
     SearchResponse,
 )
 
-
 # ── SearchRequest ──────────────────────────────────────────────────────────────
 
 

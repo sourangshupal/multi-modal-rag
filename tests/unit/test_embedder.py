@@ -127,8 +127,9 @@ class TestComputeSparseVectors:
 
     def test_sparse_vector_has_non_empty_indices_and_values(self):
         """Non-empty text produces a SparseVector with non-empty indices and values."""
-        from doc_parser.ingestion.embedder import compute_sparse_vectors
         from qdrant_client.models import SparseVector
+
+        from doc_parser.ingestion.embedder import compute_sparse_vectors
 
         result = compute_sparse_vectors(["the quick brown fox"])
         assert isinstance(result[0], SparseVector)
@@ -172,8 +173,8 @@ class TestComputeSparseVectors:
 
     def test_repeated_term_increases_weight(self):
         """A term repeated more often should produce a higher weight than a rare term."""
+
         from doc_parser.ingestion.embedder import compute_sparse_vectors
-        import re
 
         text = "apple apple apple banana"
         result = compute_sparse_vectors([text])
@@ -182,7 +183,7 @@ class TestComputeSparseVectors:
         apple_idx = abs(hash("apple")) % (2**17)
         banana_idx = abs(hash("banana")) % (2**17)
 
-        idx_to_val = dict(zip(result[0].indices, result[0].values))
+        idx_to_val = dict(zip(result[0].indices, result[0].values, strict=True))
         assert idx_to_val[apple_idx] > idx_to_val[banana_idx]
 
 
@@ -232,7 +233,6 @@ class TestGeminiEmbedder:
 
     def test_init_raises_import_error_when_google_genai_not_installed(self):
         """GeminiEmbedder should raise ImportError with install hint when google-genai missing."""
-        import sys
         from unittest.mock import MagicMock
 
         from doc_parser.ingestion.embedder import GeminiEmbedder
@@ -426,6 +426,7 @@ class TestQwenVLEmbedder:
     def test_init_raises_import_error_when_transformers_not_installed(self):
         """QwenVLEmbedder should raise ImportError with install hint when transformers missing."""
         import builtins
+
         from doc_parser.ingestion.embedder import QwenVLEmbedder
 
         real_import = builtins.__import__
@@ -490,7 +491,7 @@ def _make_chunk(
     modality: str = "text",
     text: str = "hello",
     image_base64: str | None = None,
-) -> "object":
+) -> object:
     """Build a minimal Chunk-like object for routing tests."""
     from dataclasses import dataclass, field
 

@@ -134,7 +134,7 @@ class BaseEmbedder(ABC):
 class OpenAIEmbedder(BaseEmbedder):
     """Embedder backed by the OpenAI embeddings API."""
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         api_key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
         self._client = AsyncOpenAI(api_key=api_key)
         self._model = settings.embedding_model
@@ -149,7 +149,7 @@ class GeminiEmbedder(BaseEmbedder):
 
     _MODEL = "gemini-embedding-2-preview"
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         if settings.gemini_api_key is None:
             raise ValueError("GEMINI_API_KEY must be set when EMBEDDING_PROVIDER=gemini.")
         try:
@@ -293,14 +293,14 @@ class QwenVLEmbedder(BaseEmbedder):
         return await loop.run_in_executor(None, self._embed_images_sync, images_b64)
 
 
-_PROVIDERS: dict[str, Callable[["Settings"], BaseEmbedder]] = {
+_PROVIDERS: dict[str, Callable[[Settings], BaseEmbedder]] = {
     "openai": OpenAIEmbedder,
     "gemini": GeminiEmbedder,
     "qwen": lambda s: QwenVLEmbedder(s.qwen_embedding_model),
 }
 
 
-def get_embedder(settings: "Settings") -> BaseEmbedder:
+def get_embedder(settings: Settings) -> BaseEmbedder:
     """Return the configured embedder instance.
 
     Args:
@@ -322,9 +322,9 @@ def get_embedder(settings: "Settings") -> BaseEmbedder:
 
 
 async def embed_chunks(
-    chunks: list["Chunk"],
-    embedder: "BaseEmbedder",
-    settings: "Settings",
+    chunks: list[Chunk],
+    embedder: BaseEmbedder,
+    settings: Settings,
 ) -> tuple[list[list[float]], list[SparseVector]]:
     """Embed all chunks with both dense and sparse encodings.
 
@@ -361,14 +361,14 @@ async def embed_chunks(
     if text_indices:
         texts = [chunks[i].text or "[empty]" for i in text_indices]
         text_embeddings = await embedder.embed(texts)
-        for i, emb in zip(text_indices, text_embeddings):
+        for i, emb in zip(text_indices, text_embeddings, strict=True):
             dense[i] = emb
 
     # Embed image chunks directly via pixel content
     if image_indices:
         images = [chunks[i].image_base64 for i in image_indices]
         image_embeddings = await embedder.embed_images(images)  # type: ignore[attr-defined]
-        for i, emb in zip(image_indices, image_embeddings):
+        for i, emb in zip(image_indices, image_embeddings, strict=True):
             dense[i] = emb
 
     # Sparse: BM25 from text for all chunks; image chunks with no text get empty vector

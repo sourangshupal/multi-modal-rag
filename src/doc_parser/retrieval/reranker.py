@@ -17,7 +17,6 @@ Supported backends (controlled by ``RERANKER_BACKEND`` env var):
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
@@ -82,7 +81,7 @@ class OpenAIReranker(BaseReranker):
         "Query: {query}\n\nDocument: {text}"
     )
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         api_key = (
             settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
         )
@@ -147,7 +146,7 @@ class OpenAIReranker(BaseReranker):
             *[self._score_one(query, c) for c in candidates]
         )
         scored = [
-            {**c, "rerank_score": score} for c, score in zip(candidates, scores)
+            {**c, "rerank_score": score} for c, score in zip(candidates, scores, strict=True)
         ]
         scored.sort(key=lambda x: x["rerank_score"], reverse=True)
         return scored[:top_n]
@@ -170,7 +169,7 @@ class JinaReranker(BaseReranker):
     _API_URL = "https://api.jina.ai/v1/rerank"
     _MODEL = "jina-reranker-m0"
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         if settings.jina_api_key is None:
             raise ValueError(
                 "JINA_API_KEY must be set when RERANKER_BACKEND=jina. "
@@ -239,7 +238,7 @@ class BGEReranker(BaseReranker):
     _MODEL_NAME = "BAAI/bge-reranker-v2-minicpm-layerwise"
     _CUTOFF_LAYERS = [28]
 
-    def __init__(self, settings: "Settings") -> None:  # noqa: ARG002
+    def __init__(self, settings: Settings) -> None:  # noqa: ARG002
         try:
             from FlagEmbedding import LayerWiseFlagLLMReranker  # type: ignore[import]
         except ImportError as exc:
@@ -277,7 +276,7 @@ class BGEReranker(BaseReranker):
         )
 
         scored = [
-            {**c, "rerank_score": float(score)} for c, score in zip(candidates, scores)
+            {**c, "rerank_score": float(score)} for c, score in zip(candidates, scores, strict=True)
         ]
         scored.sort(key=lambda x: x["rerank_score"], reverse=True)
         return scored[:top_n]
@@ -299,10 +298,10 @@ class QwenVLReranker(BaseReranker):
 
     _MODEL_NAME = "Qwen/Qwen3-VL-Reranker-2B"
 
-    def __init__(self, settings: "Settings") -> None:  # noqa: ARG002
+    def __init__(self, settings: Settings) -> None:  # noqa: ARG002
         try:
             import torch
-            from transformers import AutoProcessor, AutoModelForSequenceClassification
+            from transformers import AutoModelForSequenceClassification, AutoProcessor
         except ImportError as exc:
             raise ImportError(
                 "Qwen VL reranker requires transformers and torch. "
@@ -371,7 +370,7 @@ class QwenVLReranker(BaseReranker):
 
         scores = await asyncio.gather(*[score_one(c) for c in candidates])
         scored = [
-            {**c, "rerank_score": float(score)} for c, score in zip(candidates, scores)
+            {**c, "rerank_score": float(score)} for c, score in zip(candidates, scores, strict=True)
         ]
         scored.sort(key=lambda x: x["rerank_score"], reverse=True)
         return scored[:top_n]
@@ -387,7 +386,7 @@ _BACKENDS: dict[str, type[BaseReranker]] = {
 }
 
 
-def get_reranker(settings: "Settings") -> BaseReranker:
+def get_reranker(settings: Settings) -> BaseReranker:
     """Instantiate and return the configured re-ranker backend.
 
     Args:
