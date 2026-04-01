@@ -36,7 +36,6 @@ bge = [
 qwen = [
     "transformers>=4.51.0",
     "torch>=2.7.0",
-    "qwen-vl-utils>=0.0.14",
     "accelerate>=1.13",
     "Pillow>=11.0",
 ]

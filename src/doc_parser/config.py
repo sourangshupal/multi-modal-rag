@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     jina_api_key: SecretStr | None = None
 
     # Feature flags
+    # When True, enrich_chunks() is called during ingestion:
+    #   - image chunks: the region is cropped and stored as image_base64 for direct
+    #     visual embedding — no LLM call is made for images.
+    #   - table, formula, and algorithm chunks: a text description is generated via
+    #     the configured LLM (openai_llm_model) to improve retrieval quality.
     image_caption_enabled: bool = True
 
     # Captioning tuning

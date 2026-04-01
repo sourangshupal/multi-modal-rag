@@ -196,12 +196,6 @@ class QwenVLEmbedder(BaseEmbedder):
             ) from exc
 
         self._model_name = model_name
-        device = (
-            "cuda"
-            if torch.cuda.is_available()
-            else ("mps" if torch.backends.mps.is_available() else "cpu")
-        )
-        logger.info("Loading %s on device=%s", model_name, device)
 
         self._model = AutoModel.from_pretrained(
             model_name,
@@ -211,6 +205,8 @@ class QwenVLEmbedder(BaseEmbedder):
         )
         self._processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
         self._model.eval()
+        actual_device = next(self._model.parameters()).device
+        logger.info("QwenVLEmbedder loaded %s on %s", model_name, actual_device)
 
     def _embed_texts_sync(self, texts: list[str]) -> list[list[float]]:
         """Embed a list of texts synchronously using EOS-token pooling.

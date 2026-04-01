@@ -29,18 +29,21 @@ async def health() -> HealthResponse:
         logger.warning("Qdrant health check failed: {}", exc)
         qdrant_status = f"error: {exc}"
 
-    # Check OpenAI (small embedding call)
+    # Check OpenAI embeddings connectivity (skipped for non-OpenAI providers)
     openai_status: str
-    try:
-        await client.embeddings.create(
-            model=settings.embedding_model,
-            input=["ping"],
-            dimensions=8,
-        )
-        openai_status = "ok"
-    except Exception as exc:
-        logger.warning("OpenAI health check failed: {}", exc)
-        openai_status = f"error: {exc}"
+    if settings.embedding_provider.lower() == "openai":
+        try:
+            await client.embeddings.create(
+                model=settings.embedding_model,
+                input=["ping"],
+                dimensions=8,
+            )
+            openai_status = "ok"
+        except Exception as exc:
+            logger.warning("OpenAI health check failed: {}", exc)
+            openai_status = f"error: {exc}"
+    else:
+        openai_status = f"skipped (embedding_provider={settings.embedding_provider})"
 
     overall = "ok" if qdrant_status == "ok" and openai_status == "ok" else "degraded"
     return HealthResponse(

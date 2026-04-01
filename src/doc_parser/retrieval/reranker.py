@@ -85,7 +85,7 @@ class OpenAIReranker(BaseReranker):
         api_key = (
             settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
         )
-        self._client = AsyncOpenAI(api_key=api_key)
+        self._client = AsyncOpenAI(api_key=api_key, base_url=settings.openai_base_url)
         self._model = "gpt-4o-mini"
 
     async def _score_one(self, query: str, candidate: dict[str, Any]) -> float:
