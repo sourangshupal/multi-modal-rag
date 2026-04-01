@@ -273,7 +273,7 @@ class QwenVLEmbedder(BaseEmbedder):
         Returns:
             L2-normalised float embeddings, one per input text.
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._embed_texts_sync, texts)
 
     async def embed_images(self, images_b64: list[str]) -> list[list[float]]:
@@ -288,7 +288,7 @@ class QwenVLEmbedder(BaseEmbedder):
         Returns:
             L2-normalised float embeddings, one per input image.
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._embed_images_sync, images_b64)
 
 
