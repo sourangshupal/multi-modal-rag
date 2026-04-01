@@ -7,6 +7,10 @@ services:
     environment:
       # Override .env — Docker resolves service names as hostnames
       - QDRANT_URL=http://qdrant:6333
+      - EMBEDDING_PROVIDER=qwen
+      - RERANKER_BACKEND=qwen
+      - QWEN_EMBEDDING_MODEL=Qwen/Qwen3-VL-Embedding-2B
+      - EMBEDDING_DIMENSIONS=2048
     volumes:
       - ./data:/app/data
       - ./output:/app/output
