@@ -357,3 +357,273 @@ class TestGetEmbedder:
 
         with pytest.raises(ValueError, match="Unknown embedding provider"):
             get_embedder(settings)
+
+    def test_returns_qwen_embedder_for_qwen_provider(self):
+        """get_embedder returns QwenVLEmbedder when embedding_provider='qwen'."""
+        from unittest.mock import MagicMock, patch
+
+        from doc_parser.ingestion.embedder import QwenVLEmbedder, get_embedder
+
+        settings = MagicMock()
+        settings.embedding_provider = "qwen"
+        settings.qwen_embedding_model = "Qwen/Qwen3-VL-Embedding-2B"
+
+        mock_model = MagicMock()
+        mock_model.eval.return_value = None
+
+        with (
+            patch("transformers.AutoModel") as mock_auto_model,
+            patch("transformers.AutoProcessor") as mock_auto_processor,
+            patch("torch.cuda.is_available", return_value=False),
+            patch("torch.backends.mps.is_available", return_value=False),
+        ):
+            mock_auto_model.from_pretrained.return_value = mock_model
+            mock_auto_processor.from_pretrained.return_value = MagicMock()
+
+            # Patch the imports inside __init__
+            with patch.dict(
+                "sys.modules",
+                {
+                    "torch": MagicMock(
+                        cuda=MagicMock(is_available=lambda: False),
+                        backends=MagicMock(mps=MagicMock(is_available=lambda: False)),
+                        bfloat16=MagicMock(),
+                    ),
+                    "transformers": MagicMock(
+                        AutoModel=MagicMock(
+                            from_pretrained=MagicMock(return_value=mock_model)
+                        ),
+                        AutoProcessor=MagicMock(
+                            from_pretrained=MagicMock(return_value=MagicMock())
+                        ),
+                    ),
+                },
+            ):
+                result = get_embedder(settings)
+
+        assert isinstance(result, QwenVLEmbedder)
+
+
+# ── QwenVLEmbedder ────────────────────────────────────────────────────────────
+
+
+def _make_qwen_embedder(model_name: str = "Qwen/Qwen3-VL-Embedding-2B"):
+    """Create a QwenVLEmbedder with mocked HuggingFace model and processor."""
+    from doc_parser.ingestion.embedder import QwenVLEmbedder
+
+    mock_model = MagicMock()
+    mock_model.eval.return_value = None
+    mock_model.device = "cpu"
+
+    embedder = QwenVLEmbedder.__new__(QwenVLEmbedder)
+    embedder._model_name = model_name
+    embedder._model = mock_model
+    embedder._processor = MagicMock()
+    return embedder
+
+
+class TestQwenVLEmbedder:
+    def test_init_raises_import_error_when_transformers_not_installed(self):
+        """QwenVLEmbedder should raise ImportError with install hint when transformers missing."""
+        import builtins
+        from doc_parser.ingestion.embedder import QwenVLEmbedder
+
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name in ("torch", "transformers"):
+                raise ImportError(f"No module named '{name}'")
+            return real_import(name, *args, **kwargs)
+
+        builtins.__import__ = mock_import
+        try:
+            with pytest.raises(ImportError, match="QwenVLEmbedder requires transformers"):
+                QwenVLEmbedder("Qwen/Qwen3-VL-Embedding-2B")
+        finally:
+            builtins.__import__ = real_import
+
+    @pytest.mark.asyncio
+    async def test_embed_calls_run_in_executor(self):
+        """QwenVLEmbedder.embed() should offload to thread-pool executor."""
+        from unittest.mock import patch
+
+        embedder = _make_qwen_embedder()
+        fake_vectors = [[0.1, 0.2], [0.3, 0.4]]
+
+        async def fake_executor(executor, fn, *args):
+            return fake_vectors
+
+        with patch("asyncio.get_event_loop") as mock_loop:
+            mock_loop.return_value.run_in_executor = fake_executor
+            result = await embedder.embed(["hello", "world"])
+
+        assert result == fake_vectors
+
+    @pytest.mark.asyncio
+    async def test_embed_images_calls_run_in_executor(self):
+        """QwenVLEmbedder.embed_images() should offload to thread-pool executor."""
+        from unittest.mock import patch
+
+        embedder = _make_qwen_embedder()
+        fake_vectors = [[0.5, 0.6]]
+
+        async def fake_executor(executor, fn, *args):
+            return fake_vectors
+
+        with patch("asyncio.get_event_loop") as mock_loop:
+            mock_loop.return_value.run_in_executor = fake_executor
+            result = await embedder.embed_images(["base64data"])
+
+        assert result == fake_vectors
+
+    def test_has_embed_images_method(self):
+        """QwenVLEmbedder must expose embed_images so embed_chunks routing works."""
+        embedder = _make_qwen_embedder()
+        assert hasattr(embedder, "embed_images")
+        assert callable(embedder.embed_images)
+
+
+# ── embed_chunks routing ──────────────────────────────────────────────────────
+
+
+def _make_chunk(
+    modality: str = "text",
+    text: str = "hello",
+    image_base64: str | None = None,
+) -> "object":
+    """Build a minimal Chunk-like object for routing tests."""
+    from dataclasses import dataclass, field
+
+    @dataclass
+    class FakeChunk:
+        text: str
+        modality: str
+        image_base64: str | None = field(default=None)
+        chunk_id: str = "test_0_0"
+        page: int = 0
+        element_types: list = field(default_factory=list)
+        bbox: list | None = None
+        source_file: str = "test.pdf"
+        is_atomic: bool = False
+        caption: str | None = None
+
+    return FakeChunk(text=text, modality=modality, image_base64=image_base64)
+
+
+class TestEmbedChunksRouting:
+    @pytest.mark.asyncio
+    async def test_image_chunks_routed_to_embed_images_when_supported(self):
+        """embed_chunks routes image chunks with image_base64 to embed_images()."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from doc_parser.ingestion.embedder import embed_chunks
+
+        img_chunk = _make_chunk(modality="image", text="a figure", image_base64="abc123")
+        txt_chunk = _make_chunk(modality="text", text="some text")
+
+        embedder = MagicMock()
+        embedder.embed = AsyncMock(return_value=[[0.1, 0.2]])
+        embedder.embed_images = AsyncMock(return_value=[[0.9, 0.8]])
+        # hasattr check: MagicMock has embed_images by default since we set it above
+
+        settings = MagicMock()
+        dense, sparse = await embed_chunks([img_chunk, txt_chunk], embedder, settings)
+
+        # embed_images called with the image chunk's base64
+        embedder.embed_images.assert_called_once_with(["abc123"])
+        # embed called with the text chunk's text
+        embedder.embed.assert_called_once_with(["some text"])
+        assert dense[0] == [0.9, 0.8]
+        assert dense[1] == [0.1, 0.2]
+
+    @pytest.mark.asyncio
+    async def test_text_chunks_routed_to_embed(self):
+        """embed_chunks sends text/table/formula chunks to embed()."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from doc_parser.ingestion.embedder import embed_chunks
+
+        chunks = [
+            _make_chunk(modality="text", text="paragraph text"),
+            _make_chunk(modality="table", text="| col1 | col2 |"),
+            _make_chunk(modality="formula", text="E = mc^2"),
+        ]
+
+        embedder = MagicMock()
+        embedder.embed = AsyncMock(
+            return_value=[[0.1] * 3, [0.2] * 3, [0.3] * 3]
+        )
+        # No embed_images on this embedder (simulate OpenAI path)
+        del embedder.embed_images
+
+        settings = MagicMock()
+        dense, sparse = await embed_chunks(chunks, embedder, settings)
+
+        embedder.embed.assert_called_once_with(
+            ["paragraph text", "| col1 | col2 |", "E = mc^2"]
+        )
+        assert len(dense) == 3
+        assert len(sparse) == 3
+
+    @pytest.mark.asyncio
+    async def test_image_chunks_fall_back_to_text_when_embed_images_absent(self):
+        """Image chunks fall back to embed() when embedder lacks embed_images (OpenAI/Gemini)."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from doc_parser.ingestion.embedder import embed_chunks
+
+        img_chunk = _make_chunk(modality="image", text="caption text", image_base64="abc123")
+
+        embedder = MagicMock(spec=["embed"])  # spec limits to only 'embed'
+        embedder.embed = AsyncMock(return_value=[[0.5, 0.5]])
+
+        settings = MagicMock()
+        dense, sparse = await embed_chunks([img_chunk], embedder, settings)
+
+        # Falls back to embed() with caption text
+        embedder.embed.assert_called_once_with(["caption text"])
+        assert dense[0] == [0.5, 0.5]
+
+    @pytest.mark.asyncio
+    async def test_image_chunks_without_image_base64_go_to_text_path(self):
+        """Image chunks without image_base64 are embedded via text even if embed_images exists."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from doc_parser.ingestion.embedder import embed_chunks
+
+        img_chunk = _make_chunk(modality="image", text="figure caption", image_base64=None)
+
+        embedder = MagicMock()
+        embedder.embed = AsyncMock(return_value=[[0.3, 0.3]])
+        embedder.embed_images = AsyncMock(return_value=[[0.9, 0.9]])
+
+        settings = MagicMock()
+        dense, sparse = await embed_chunks([img_chunk], embedder, settings)
+
+        embedder.embed.assert_called_once_with(["figure caption"])
+        embedder.embed_images.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sparse_vectors_always_computed_from_text(self):
+        """Sparse vectors are computed from chunk.text for all chunks regardless of modality."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from doc_parser.ingestion.embedder import embed_chunks
+
+        chunks = [
+            _make_chunk(modality="image", text="caption", image_base64="b64"),
+            _make_chunk(modality="text", text="hello world"),
+        ]
+
+        embedder = MagicMock()
+        embedder.embed = AsyncMock(return_value=[[0.1] * 2])
+        embedder.embed_images = AsyncMock(return_value=[[0.9] * 2])
+
+        settings = MagicMock()
+        _, sparse = await embed_chunks(chunks, embedder, settings)
+
+        assert len(sparse) == 2
+        # Image chunk "caption" should have non-empty sparse vector
+        assert len(sparse[0].indices) > 0
+        # Text chunk "hello world" should also have non-empty sparse vector
+        assert len(sparse[1].indices) > 0
