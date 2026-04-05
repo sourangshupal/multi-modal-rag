@@ -8,47 +8,70 @@ Complete reference for testing the `qwen` branch end-to-end.
 
 | Component | Model / Service | Runs Where |
 |---|---|---|
-| **OCR / Parsing** | GLM-OCR (GLM-4V) | Z.AI MaaS cloud API |
-| **Layout detection** | PP-DocLayout-V3-L | Ollama (local, only in `ollama` mode) |
+| **OCR / Parsing** | GLM-OCR (GLM-4V) | Ollama (local Docker) |
+| **Layout detection** | PP-DocLayout-V3-L | In-process HuggingFace (auto-downloaded) |
 | **Embedding** | Qwen3-VL-Embedding-2B | Local — in-process HuggingFace |
 | **Reranker** | Qwen3-VL-Reranker-2B | Local — in-process HuggingFace |
-| **LLM (captions + generation)** | Qwen3-VL-8B-Instruct | RunPod serverless (OpenAI-compat API) |
+| **LLM (captions + generation)** | Qwen3-VL-8B-Instruct | Local vLLM (Docker, on-GPU) |
 | **Vector DB** | Qdrant | Local Docker |
+
+> **Zero external API keys required.** Everything runs on your local GPU. The only network calls are one-time HuggingFace model downloads on first run.
 
 ---
 
 ## 1. API Keys Required
 
-### Mandatory
+**None.** This branch runs entirely on local GPU — no external API keys of any kind are needed.
 
-| Key | Where to get it | Used for |
+All models are downloaded automatically from HuggingFace on first run and cached locally. After the initial download everything runs fully offline.
+
+| Model | Size | Downloaded by |
 |---|---|---|
-| `Z_AI_API_KEY` | [z.ai](https://z.ai) console | GLM-OCR document parsing (cloud mode) |
-| `OPENAI_API_KEY` | RunPod console → your serverless endpoint | Table/formula captioning + RAG generation |
-| `OPENAI_BASE_URL` | RunPod console → endpoint URL | Points to your Qwen3-VL-8B-Instruct endpoint |
+| GLM-OCR (glm-ocr:latest) | ~600 MB | `ollama pull glm-ocr:latest` |
+| PP-DocLayout-V3 weights | ~400 MB | Auto on first ingest (HuggingFace) |
+| Qwen3-VL-Embedding-2B | ~4–5 GB | Auto on first ingest (HuggingFace) |
+| Qwen3-VL-Reranker-2B | ~4–5 GB | Auto on first search (HuggingFace) |
+| Qwen3-VL-8B-Instruct (vLLM) | ~15 GB BF16 / ~5 GB AWQ | Auto on first container start |
 
-### Optional
-
-| Key | When needed |
-|---|---|
-| `JINA_API_KEY` | Only if you override `RERANKER_BACKEND=jina` for comparison testing |
-
-> **Note:** The local Qwen embedding and reranking models load from HuggingFace automatically on first run. No API key needed — just internet access for the initial download (~4–5 GB each). After that they run entirely offline.
+> **Total first-run download: ~25 GB (BF16) or ~15 GB (AWQ).** All cached in Docker volumes — subsequent restarts are instant.
 
 ---
 
-## 2. RunPod Endpoint Setup
+## 2. Ollama Setup — Pull the GLM-OCR Model
 
-The LLM (`Qwen3-VL-8B-Instruct`) runs on RunPod serverless. Before testing:
+GLM-OCR runs locally via Ollama. You must pull the model once before starting the stack.
 
-1. Log in to [runpod.io](https://runpod.io)
-2. Create a serverless endpoint with `Qwen/Qwen3-VL-8B-Instruct` via vLLM
-3. Set `min_workers=1` to avoid cold-start delays (30–90 s otherwise)
-4. Copy the endpoint ID — your `OPENAI_BASE_URL` will be:
-   ```
-   https://api.runpod.ai/v2/<endpoint-id>/openai/v1
-   ```
-5. Copy your RunPod API key → this is your `OPENAI_API_KEY`
+### If running scripts directly on the host (non-Docker mode)
+
+```bash
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull the GLM-OCR model (~600 MB)
+ollama pull glm-ocr:latest
+
+# Verify it downloaded
+ollama list
+# Should show: glm-ocr:latest   ...   600 MB
+```
+
+### If using Docker Compose (recommended for Lightning.ai)
+
+The `ollama` service in `docker-compose.gpu.yml` starts Ollama automatically, but you must pull the model into its volume before first use:
+
+```bash
+# Start only the Ollama container
+docker compose -f docker-compose.gpu.yml up ollama -d
+
+# Wait ~10s for Ollama to be ready, then pull the model
+docker compose -f docker-compose.gpu.yml exec ollama ollama pull glm-ocr:latest
+
+# Verify
+docker compose -f docker-compose.gpu.yml exec ollama ollama list
+# Should show: glm-ocr:latest
+```
+
+The model is stored in the `ollama_models` Docker volume — you only need to pull it once. It persists across container restarts.
 
 ---
 
@@ -85,14 +108,16 @@ cp .env.example .env
 Fill in `.env`:
 
 ```dotenv
-# ── Parser ─────────────────────────────────────────────────────
-PARSER_BACKEND=cloud
-Z_AI_API_KEY=<your_z_ai_key>
+# ── Parser — Ollama local (no Z_AI_API_KEY needed) ────────────
+PARSER_BACKEND=ollama
 
-# ── LLM — RunPod (Qwen3-VL-8B-Instruct) ───────────────────────
-OPENAI_API_KEY=<your_runpod_api_key>
-OPENAI_BASE_URL=https://api.runpod.ai/v2/<endpoint-id>/openai/v1
+# ── LLM — local vLLM on GPU (no RunPod key needed) ────────────
+OPENAI_API_KEY=local-token             # any non-empty string
+OPENAI_BASE_URL=http://vllm:8000/v1   # internal Docker network
 OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct
+
+# For L4 (24 GB) use AWQ instead:
+# OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct-AWQ
 
 # ── Embedding — local Qwen ────────────────────────────────────
 EMBEDDING_PROVIDER=qwen
@@ -118,13 +143,28 @@ API_WORKERS=1
 LOG_JSON=false
 ```
 
-### 3.4 Start Qdrant
+### 3.4 Start the Full Stack (local GPU mode)
 
 ```bash
-docker compose up qdrant -d
+# A100 / L40s — BF16 full precision
+COMPOSE_PROFILES=local-llm docker compose -f docker-compose.gpu.yml up -d
 
-# Verify it's running
+# L4 (24 GB) — 4-bit AWQ
+COMPOSE_PROFILES=local-llm-4bit docker compose -f docker-compose.gpu.yml up -d
+```
+
+On first run, pull the GLM-OCR model into the Ollama container before ingesting any documents:
+
+```bash
+docker compose -f docker-compose.gpu.yml exec ollama ollama pull glm-ocr:latest
+```
+
+Verify the stack is healthy:
+
+```bash
 curl http://localhost:6333/healthz    # → {"title":"qdrant - vector search engine"}
+curl http://localhost:8001/health     # → HTTP 200 (vLLM ready)
+curl http://localhost:8000/health     # → {"status":"ok",...}
 ```
 
 ---
@@ -332,27 +372,31 @@ Expected: `All checks passed.`
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `Z_AI_API_KEY is required` on startup | Key missing or `.env` not loaded | Check `.env` exists in project root; verify key value |
-| `QwenVLEmbedder` loads on CPU, very slow | No GPU / CUDA not set up | Normal for CPU-only — just slower. Use GPU machine for production |
-| RunPod call hangs 30–90 s | Cold start (`min_workers=0`) | Set `min_workers=1` in RunPod endpoint settings |
-| `Qdrant connection refused` | Qdrant container not running | `docker compose up qdrant -d` |
+| `Parsing failed: Connection refused` on port 11434 | Ollama container not running | `docker compose -f docker-compose.gpu.yml up ollama -d` |
+| `model not found` during parsing | GLM-OCR not pulled into Ollama | `docker compose -f docker-compose.gpu.yml exec ollama ollama pull glm-ocr:latest` |
+| `QwenVLEmbedder` loads on CPU, very slow | No GPU / CUDA not set up | Verify `nvidia-smi` sees the GPU; check container has GPU access |
+| `Qdrant connection refused` | Qdrant container not running | `COMPOSE_PROFILES=local-llm docker compose -f docker-compose.gpu.yml up -d` |
+| vLLM call hangs / times out | vLLM still loading on first start | Watch `docker compose logs -f vllm`; wait for "Uvicorn running" |
 | `BUG: embed_chunks produced unfilled slots` | Image chunk has no base64 and no text | Check `IMAGE_CAPTION_ENABLED=true` and PDF has extractable content |
 | `--overwrite` needed | Re-ingesting after changing `EMBEDDING_DIMENSIONS` | Always use `--overwrite` when dimension changes (2048 is fixed for qwen branch) |
 | Health endpoint shows `status: degraded` | Qdrant not reachable | Check Docker, check `QDRANT_URL` in `.env` |
-| Table captions missing / empty | RunPod endpoint offline | Verify endpoint is active in RunPod console |
+| Table captions missing / empty | vLLM not yet ready | Check `curl http://localhost:8001/health` — must return 200 first |
+| Parsing very slow (~30 s/page) | GLM-OCR running on CPU inside Ollama | Normal on CPU; GPU-accelerated Ollama cuts this to ~5 s/page |
 
 ---
 
 ## 11. Key Config Defaults (qwen branch)
 
-| Setting | Default | Notes |
+| Setting | Default (qwen branch) | Notes |
 |---|---|---|
+| `PARSER_BACKEND` | `ollama` | GLM-OCR via local Ollama — no Z_AI_API_KEY needed |
 | `EMBEDDING_PROVIDER` | `qwen` | Local Qwen3-VL-Embedding-2B |
 | `EMBEDDING_DIMENSIONS` | `2048` | Fixed for this branch — do not change without `--overwrite` |
 | `RERANKER_BACKEND` | `qwen` | Local Qwen3-VL-Reranker-2B |
-| `OPENAI_LLM_MODEL` | `Qwen/Qwen3-VL-8B-Instruct` | Sent to RunPod endpoint |
-| `IMAGE_CAPTION_ENABLED` | `true` | Images: crop only (no LLM). Tables/formulas: LLM caption via RunPod |
-| `PARSER_BACKEND` | `cloud` | GLM-OCR via Z.AI MaaS |
+| `OPENAI_LLM_MODEL` | `Qwen/Qwen3-VL-8B-Instruct` | Served by local vLLM container |
+| `OPENAI_BASE_URL` | `http://vllm:8000/v1` | Internal Docker network address for vLLM |
+| `OPENAI_API_KEY` | `local-token` | Any non-empty string — vLLM does not validate tokens |
+| `IMAGE_CAPTION_ENABLED` | `true` | Images: crop only (no LLM). Tables/formulas: LLM caption via local vLLM |
 | `QDRANT_COLLECTION_NAME` | `documents` | Change to isolate test data |
 
 ---
@@ -371,23 +415,19 @@ Run Qwen3-VL-8B-Instruct locally via vLLM instead of RunPod. Embedding and reran
 
 VRAM breakdown (all models, BF16): GLM-OCR ~6 GB + Embedding ~5 GB + Reranker ~5 GB + Qwen3-VL-8B ~18-20 GB ≈ 34–36 GB
 
-### 12.2 Switch from RunPod to Local vLLM
+### 12.2 `.env` Settings for Local vLLM
 
-Edit `.env` — change only these two lines:
+The full `.env` for local-only mode (no external API keys):
 
 ```dotenv
-# Before (RunPod):
-OPENAI_API_KEY=<runpod_key>
-OPENAI_BASE_URL=https://api.runpod.ai/v2/<endpoint-id>/openai/v1
+PARSER_BACKEND=ollama
 
-# After (local vLLM, BF16):
 OPENAI_API_KEY=local-token
 OPENAI_BASE_URL=http://vllm:8000/v1
-```
+OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct
 
-For AWQ 4-bit on L4, also change:
-```dotenv
-OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct-AWQ
+# For L4 (AWQ 4-bit):
+# OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct-AWQ
 ```
 
 > `http://vllm:8000/v1` is the **internal Docker network** address. From your host terminal use `http://localhost:8001/...` for verification.
@@ -436,21 +476,6 @@ curl http://localhost:8001/v1/chat/completions \
   }'
 ```
 
-### 12.6 Switching Back to RunPod
-
-Restore two lines in `.env`:
-```dotenv
-OPENAI_API_KEY=<your_runpod_key>
-OPENAI_BASE_URL=https://api.runpod.ai/v2/<endpoint-id>/openai/v1
-```
-
-Restart without a profile:
-```bash
-docker compose -f docker-compose.gpu.yml down
-docker compose -f docker-compose.gpu.yml up -d
-docker compose -f docker-compose.gpu.yml ps    # vllm / vllm-4bit absent
-```
-
 ### 12.7 Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -468,7 +493,7 @@ docker compose -f docker-compose.gpu.yml ps    # vllm / vllm-4bit absent
 
 This section is a complete, step-by-step guide for students running the qwen branch on a **Lightning.ai GPU instance** with no RunPod required.
 
-> **The only external API still needed is `Z_AI_API_KEY`** (GLM-OCR document parsing via Z.AI cloud). The LLM, embedding model, and reranker all run on the local GPU.
+> **Zero external API keys required.** Document parsing (GLM-OCR via Ollama), LLM (local vLLM), embedding, and reranker all run on the local GPU. The only network activity is one-time HuggingFace/Ollama model downloads on first run.
 
 ---
 
@@ -524,12 +549,11 @@ cp .env.example .env
 nano .env    # or use the Lightning.ai file editor
 ```
 
-**`.env` for A100 / L40s (BF16 mode):**
+**`.env` for A100 / L40s (BF16 mode) — no external API keys needed:**
 
 ```dotenv
-# ── Parser ─────────────────────────────────────────────────────
-PARSER_BACKEND=cloud
-Z_AI_API_KEY=<your_z_ai_key>           # required — GLM-OCR still uses Z.AI cloud
+# ── Parser — Ollama local (no Z_AI_API_KEY) ───────────────────
+PARSER_BACKEND=ollama
 
 # ── LLM — local vLLM (BF16) ───────────────────────────────────
 OPENAI_API_KEY=local-token             # any non-empty string works
@@ -581,9 +605,22 @@ COMPOSE_PROFILES=local-llm-4bit docker compose -f docker-compose.gpu.yml up -d
 
 Services started:
 - `qdrant` — vector database
-- `ollama` — GLM-OCR inference (document parsing)
-- `vllm` or `vllm-4bit` — Qwen3-VL-8B-Instruct LLM
+- `ollama` — GLM-OCR inference (document parsing, local)
+- `vllm` or `vllm-4bit` — Qwen3-VL-8B-Instruct LLM (local)
 - `app` — FastAPI RAG server (waits for all others to be healthy before starting)
+
+### 13.6a Pull the GLM-OCR Model into Ollama (first time only)
+
+After the containers are up, pull the GLM-OCR model into the Ollama volume. This is a one-time step — the model persists across restarts in the `ollama_models` Docker volume.
+
+```bash
+# Wait ~15s for Ollama to be ready, then pull
+docker compose -f docker-compose.gpu.yml exec ollama ollama pull glm-ocr:latest
+
+# Verify it downloaded (~600 MB)
+docker compose -f docker-compose.gpu.yml exec ollama ollama list
+# Should show: glm-ocr:latest   ...   600 MB
+```
 
 ---
 
@@ -719,23 +756,15 @@ docker compose -f docker-compose.gpu.yml logs -f app
 
 ---
 
-### 13.12 Switching Back to RunPod
+### 13.12 Key Reminders
 
-If you want to move off Lightning.ai and back to RunPod:
-
-1. Edit `.env`:
-```dotenv
-OPENAI_API_KEY=<your_runpod_api_key>
-OPENAI_BASE_URL=https://api.runpod.ai/v2/<endpoint-id>/openai/v1
-OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct
-```
-
-2. Restart without a profile (vLLM container does not start):
-```bash
-docker compose -f docker-compose.gpu.yml down
-docker compose -f docker-compose.gpu.yml up -d
-docker compose -f docker-compose.gpu.yml ps    # vllm / vllm-4bit should be absent
-```
+| Item | Detail |
+|---|---|
+| No external API keys needed | `PARSER_BACKEND=ollama` + local vLLM — everything is on-GPU |
+| GLM-OCR model pull | One-time step per fresh Ollama volume — see step 13.6a |
+| HuggingFace models | Auto-downloaded on first run; cached in `huggingface_cache` Docker volume |
+| `OPENAI_BASE_URL=http://vllm:8000/v1` | Internal Docker address — do not change for host-side verification |
+| Host-side vLLM port | `http://localhost:8001/...` — for `curl` checks from the terminal |
 
 ---
 
@@ -747,6 +776,8 @@ docker compose -f docker-compose.gpu.yml ps    # vllm / vllm-4bit should be abse
 | `docker: Error response from daemon: could not select device driver` | nvidia-container-toolkit missing | `sudo apt-get install -y nvidia-container-toolkit && sudo systemctl restart docker` |
 | vLLM OOM / exits immediately | Not enough VRAM for BF16 | Switch to `local-llm-4bit` profile and AWQ model, or pick a larger GPU |
 | App health shows `status: degraded` | Qdrant or vLLM not yet ready | Wait 1-2 min after all containers show healthy, then retry |
-| `Z_AI_API_KEY is required` | Key missing from `.env` | GLM-OCR always uses Z.AI cloud — the key is mandatory |
+| `Parsing failed: Connection refused` | Ollama not running or model not pulled | Run step 13.6a to pull `glm-ocr:latest` into the Ollama container |
+| `model not found` during parsing | GLM-OCR not in Ollama volume | `docker compose -f docker-compose.gpu.yml exec ollama ollama pull glm-ocr:latest` |
 | Table captions empty | vLLM still cold (not yet loaded) | Check `docker compose logs vllm`; wait for "Uvicorn running" message |
 | `BUG: embed_chunks produced unfilled slots` | Image chunk has no base64 | Ensure `IMAGE_CAPTION_ENABLED=true` in `.env` |
+| Parsing is very slow (~30 s/page) | GLM-OCR on CPU in Ollama | Normal on CPU instances; GPU-enabled Ollama reduces to ~5 s/page |
