@@ -461,3 +461,292 @@ docker compose -f docker-compose.gpu.yml ps    # vllm / vllm-4bit absent
 | App gets errors calling vLLM | Wrong port in `OPENAI_BASE_URL` | Use `http://vllm:8000/v1` (internal port 8000, not 8001) |
 | `model not found` error | Model name mismatch | BF16: `Qwen/Qwen3-VL-8B-Instruct`; AWQ: `Qwen/Qwen3-VL-8B-Instruct-AWQ` |
 | warmup shows "still waiting..." | Model still loading/downloading | Normal — check `docker compose logs vllm` for progress |
+
+---
+
+## 13. Running Everything on Lightning.ai (Full Local GPU)
+
+This section is a complete, step-by-step guide for students running the qwen branch on a **Lightning.ai GPU instance** with no RunPod required.
+
+> **The only external API still needed is `Z_AI_API_KEY`** (GLM-OCR document parsing via Z.AI cloud). The LLM, embedding model, and reranker all run on the local GPU.
+
+---
+
+### 13.1 Choose the Right GPU Instance
+
+| GPU | VRAM | Mode | Profile |
+|---|---|---|---|
+| **A100 (80 GB)** | 80 GB | BF16 full precision | `local-llm` |
+| **L40s (48 GB)** | 48 GB | BF16 full precision | `local-llm` |
+| **L4 (24 GB)** | 24 GB | 4-bit AWQ (tight, ~22 GB) | `local-llm-4bit` |
+| T4 (16 GB) | 16 GB | **Not supported** — not enough VRAM | — |
+
+**VRAM breakdown (BF16):** GLM-OCR ~6 GB + Embedding ~5 GB + Reranker ~5 GB + Qwen3-VL-8B ~18-20 GB = **~34-36 GB total**
+
+---
+
+### 13.2 Open a Terminal on the Instance
+
+All commands below run inside the Lightning.ai terminal (SSH or the browser terminal).
+
+---
+
+### 13.3 Verify Prerequisites
+
+```bash
+# Confirm Docker is available
+docker --version
+
+# Confirm the GPU is visible
+nvidia-smi
+
+# If nvidia-container-toolkit is missing (rare on Lightning.ai):
+sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
+```
+
+---
+
+### 13.4 Clone the Repository and Switch to qwen Branch
+
+```bash
+git clone https://github.com/sourangshupal/multi-modal-rag.git
+cd multi-modal-rag
+git checkout qwen
+```
+
+---
+
+### 13.5 Create and Fill `.env`
+
+```bash
+cp .env.example .env
+nano .env    # or use the Lightning.ai file editor
+```
+
+**`.env` for A100 / L40s (BF16 mode):**
+
+```dotenv
+# ── Parser ─────────────────────────────────────────────────────
+PARSER_BACKEND=cloud
+Z_AI_API_KEY=<your_z_ai_key>           # required — GLM-OCR still uses Z.AI cloud
+
+# ── LLM — local vLLM (BF16) ───────────────────────────────────
+OPENAI_API_KEY=local-token             # any non-empty string works
+OPENAI_BASE_URL=http://vllm:8000/v1   # internal Docker network address
+OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct
+
+# ── Embedding — local Qwen ────────────────────────────────────
+EMBEDDING_PROVIDER=qwen
+QWEN_EMBEDDING_MODEL=Qwen/Qwen3-VL-Embedding-2B
+EMBEDDING_DIMENSIONS=2048
+
+# ── Reranker — local Qwen ─────────────────────────────────────
+RERANKER_BACKEND=qwen
+RERANKER_TOP_N=5
+
+# ── Qdrant ────────────────────────────────────────────────────
+QDRANT_URL=http://localhost:6333
+QDRANT_API_KEY=
+QDRANT_COLLECTION_NAME=documents
+
+# ── Feature flags ─────────────────────────────────────────────
+IMAGE_CAPTION_ENABLED=true
+
+# ── API server ────────────────────────────────────────────────
+API_HOST=0.0.0.0
+API_PORT=8000
+API_WORKERS=1
+LOG_JSON=false
+```
+
+**For L4 (AWQ 4-bit):** change only this one line:
+```dotenv
+OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct-AWQ
+```
+
+---
+
+### 13.6 Start the Full Stack
+
+**A100 / L40s (BF16):**
+```bash
+COMPOSE_PROFILES=local-llm docker compose -f docker-compose.gpu.yml up -d
+```
+
+**L4 (AWQ 4-bit):**
+```bash
+COMPOSE_PROFILES=local-llm-4bit docker compose -f docker-compose.gpu.yml up -d
+```
+
+Services started:
+- `qdrant` — vector database
+- `ollama` — GLM-OCR inference (document parsing)
+- `vllm` or `vllm-4bit` — Qwen3-VL-8B-Instruct LLM
+- `app` — FastAPI RAG server (waits for all others to be healthy before starting)
+
+---
+
+### 13.7 Wait for vLLM to Load (First Run Only)
+
+On the first run, vLLM downloads the model from HuggingFace (~15 GB for BF16, ~5 GB for AWQ). This takes **5–15 minutes** depending on network speed. The model is cached in the `huggingface_cache` Docker volume — subsequent restarts skip the download entirely.
+
+```bash
+# Watch vLLM download and startup progress:
+docker compose -f docker-compose.gpu.yml logs -f vllm
+
+# Wait for this line:
+# "Uvicorn running on http://0.0.0.0:8000"
+```
+
+---
+
+### 13.8 Verify the Full Stack is Healthy
+
+Run these checks once vLLM has started:
+
+```bash
+# All containers should show "Up" or "healthy"
+docker compose -f docker-compose.gpu.yml ps
+
+# vLLM health (host port 8001)
+curl http://localhost:8001/health
+# Expected: HTTP 200
+
+# Confirm model is loaded
+curl http://localhost:8001/v1/models | python -m json.tool
+# Expected: shows "Qwen/Qwen3-VL-8B-Instruct"
+
+# Quick LLM test
+curl http://localhost:8001/v1/chat/completions \
+  -H "Authorization: Bearer local-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen3-VL-8B-Instruct",
+    "messages": [{"role": "user", "content": "Hello, are you working?"}],
+    "max_tokens": 20
+  }'
+
+# Qdrant health
+curl http://localhost:6333/healthz
+# Expected: {"title":"qdrant - vector search engine"}
+
+# App health
+curl http://localhost:8000/health | python -m json.tool
+# Expected:
+# {
+#   "status": "ok",
+#   "qdrant": "ok",
+#   "openai": "skipped (embedding_provider=qwen)",
+#   "reranker_backend": "qwen"
+# }
+```
+
+---
+
+### 13.9 Run the Pipeline
+
+#### Option A — CLI scripts (recommended for learning and debugging)
+
+```bash
+# Install Python deps in a local venv (for CLI scripts)
+uv venv --python 3.12 && source .venv/bin/activate
+uv pip install -e ".[dev,qwen]"
+
+# Step 1: Ingest a PDF
+python scripts/ingest.py data/raw/paper.pdf
+
+# Step 2: Search
+python scripts/search.py "what are the key results?"
+
+# Search with modality filter
+python scripts/search.py "table showing accuracy results" --filter-modality table
+
+# Search with more candidates before reranking
+python scripts/search.py "attention mechanism figure" --top-k 30 --top-n 5
+
+# Step 3: RAG generation (via Python)
+python scripts/generate.py "summarise the key results from the tables"
+```
+
+#### Option B — REST API
+
+```bash
+# Ingest a PDF
+curl -X POST http://localhost:8000/ingest \
+  -F "file=@data/raw/paper.pdf"
+
+# Search
+curl -X POST http://localhost:8000/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "key results", "top_k": 10, "top_n": 5}'
+
+# RAG generation
+curl -X POST http://localhost:8000/generate \
+  -H "Content-Type: application/json" \
+  -d '{"query": "summarise the key results from the tables"}'
+```
+
+---
+
+### 13.10 What to Watch for in Logs
+
+```bash
+docker compose -f docker-compose.gpu.yml logs -f app
+```
+
+| Log message | What it means |
+|---|---|
+| `QwenVLEmbedder loaded ... on cuda:0` | Embedding model loaded onto GPU |
+| `QwenVLReranker loaded ... on cuda:0` | Reranker loaded onto GPU |
+| `Captioning N table/formula/algorithm chunks` | vLLM being called for table/formula captions |
+| `Image chunk: cropped bbox, stored image_base64` | Images handled locally — no LLM call |
+| `Upserted N points` | Vectors successfully stored in Qdrant |
+| `[warmup] vLLM: ready in Xs` | vLLM was healthy before serving started |
+
+---
+
+### 13.11 Port Reference
+
+| Service | Internal (Docker network) | External (host / Lightning.ai) |
+|---|---|---|
+| App (FastAPI) | `app:8000` | `http://localhost:8000` |
+| vLLM | `vllm:8000` | `http://localhost:8001` |
+| Qdrant HTTP | `qdrant:6333` | `http://localhost:6333` |
+| Ollama (GLM-OCR) | `ollama:11434` | `http://localhost:11434` |
+
+> **Important:** `OPENAI_BASE_URL=http://vllm:8000/v1` uses the **internal** Docker network address. When verifying from the terminal use port `8001`.
+
+---
+
+### 13.12 Switching Back to RunPod
+
+If you want to move off Lightning.ai and back to RunPod:
+
+1. Edit `.env`:
+```dotenv
+OPENAI_API_KEY=<your_runpod_api_key>
+OPENAI_BASE_URL=https://api.runpod.ai/v2/<endpoint-id>/openai/v1
+OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct
+```
+
+2. Restart without a profile (vLLM container does not start):
+```bash
+docker compose -f docker-compose.gpu.yml down
+docker compose -f docker-compose.gpu.yml up -d
+docker compose -f docker-compose.gpu.yml ps    # vllm / vllm-4bit should be absent
+```
+
+---
+
+### 13.13 Troubleshooting (Lightning.ai specific)
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `nvidia-smi` not found | Lightning.ai instance has no GPU | Select a GPU instance in the Lightning.ai dashboard |
+| `docker: Error response from daemon: could not select device driver` | nvidia-container-toolkit missing | `sudo apt-get install -y nvidia-container-toolkit && sudo systemctl restart docker` |
+| vLLM OOM / exits immediately | Not enough VRAM for BF16 | Switch to `local-llm-4bit` profile and AWQ model, or pick a larger GPU |
+| App health shows `status: degraded` | Qdrant or vLLM not yet ready | Wait 1-2 min after all containers show healthy, then retry |
+| `Z_AI_API_KEY is required` | Key missing from `.env` | GLM-OCR always uses Z.AI cloud — the key is mandatory |
+| Table captions empty | vLLM still cold (not yet loaded) | Check `docker compose logs vllm`; wait for "Uvicorn running" message |
+| `BUG: embed_chunks produced unfilled slots` | Image chunk has no base64 | Ensure `IMAGE_CAPTION_ENABLED=true` in `.env` |
