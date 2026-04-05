@@ -97,8 +97,8 @@ services:
       --model Qwen/Qwen3-VL-8B-Instruct
       --port 8000
       --dtype bfloat16
-      --gpu-memory-utilization 0.45
-      --max-model-len 32768
+      --gpu-memory-utilization 0.85
+      --max-model-len 8192
       --mm-encoder-tp-mode data
       --limit-mm-per-prompt image=10
     healthcheck:
