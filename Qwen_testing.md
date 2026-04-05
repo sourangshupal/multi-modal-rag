@@ -354,3 +354,110 @@ Expected: `All checks passed.`
 | `IMAGE_CAPTION_ENABLED` | `true` | Images: crop only (no LLM). Tables/formulas: LLM caption via RunPod |
 | `PARSER_BACKEND` | `cloud` | GLM-OCR via Z.AI MaaS |
 | `QDRANT_COLLECTION_NAME` | `documents` | Change to isolate test data |
+
+---
+
+## 12. Local vLLM Mode (No RunPod Required)
+
+Run Qwen3-VL-8B-Instruct locally via vLLM instead of RunPod. Embedding and reranking are unaffected — they continue running in-process.
+
+### 12.1 GPU Requirements
+
+| GPU | VRAM | Variant | Compose profile |
+|---|---|---|---|
+| L40s (48 GB) | 48 GB | BF16 full precision | `local-llm` |
+| A100 (80 GB) | 80 GB | BF16 full precision | `local-llm` |
+| L4 (24 GB) | 24 GB | 4-bit AWQ (tight — ~22 GB total) | `local-llm-4bit` |
+
+VRAM breakdown (all models, BF16): GLM-OCR ~6 GB + Embedding ~5 GB + Reranker ~5 GB + Qwen3-VL-8B ~18-20 GB ≈ 34–36 GB
+
+### 12.2 Switch from RunPod to Local vLLM
+
+Edit `.env` — change only these two lines:
+
+```dotenv
+# Before (RunPod):
+OPENAI_API_KEY=<runpod_key>
+OPENAI_BASE_URL=https://api.runpod.ai/v2/<endpoint-id>/openai/v1
+
+# After (local vLLM, BF16):
+OPENAI_API_KEY=local-token
+OPENAI_BASE_URL=http://vllm:8000/v1
+```
+
+For AWQ 4-bit on L4, also change:
+```dotenv
+OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct-AWQ
+```
+
+> `http://vllm:8000/v1` is the **internal Docker network** address. From your host terminal use `http://localhost:8001/...` for verification.
+
+### 12.3 Starting the Stack
+
+```bash
+# BF16 mode (L40s / A100)
+COMPOSE_PROFILES=local-llm docker compose -f docker-compose.gpu.yml up -d
+
+# 4-bit AWQ mode (L4)
+COMPOSE_PROFILES=local-llm-4bit docker compose -f docker-compose.gpu.yml up -d
+
+# RunPod mode (default — vLLM container does NOT start)
+docker compose -f docker-compose.gpu.yml up -d
+```
+
+On first run vLLM downloads the model from HuggingFace (~15 GB for BF16, ~5 GB for AWQ). The model is cached in the `huggingface_cache` Docker volume — subsequent restarts skip the download.
+
+### 12.4 Watch vLLM Start Up
+
+```bash
+docker compose -f docker-compose.gpu.yml logs -f vllm
+# Wait for: "Uvicorn running on http://0.0.0.0:8000"
+```
+
+### 12.5 Verify vLLM from the Host
+
+```bash
+# Health check (external port 8001)
+curl http://localhost:8001/health
+# Expected: HTTP 200
+
+# List loaded models
+curl http://localhost:8001/v1/models | python -m json.tool
+# Expected: model ID matches OPENAI_LLM_MODEL
+
+# Direct chat completion test
+curl http://localhost:8001/v1/chat/completions \
+  -H "Authorization: Bearer local-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen3-VL-8B-Instruct",
+    "messages": [{"role": "user", "content": "Hello, are you working?"}],
+    "max_tokens": 30
+  }'
+```
+
+### 12.6 Switching Back to RunPod
+
+Restore two lines in `.env`:
+```dotenv
+OPENAI_API_KEY=<your_runpod_key>
+OPENAI_BASE_URL=https://api.runpod.ai/v2/<endpoint-id>/openai/v1
+```
+
+Restart without a profile:
+```bash
+docker compose -f docker-compose.gpu.yml down
+docker compose -f docker-compose.gpu.yml up -d
+docker compose -f docker-compose.gpu.yml ps    # vllm / vllm-4bit absent
+```
+
+### 12.7 Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `connection refused` on `localhost:8001` | vLLM not started | Verify `COMPOSE_PROFILES=local-llm` was set |
+| vLLM container exits immediately | OOM — not enough VRAM | Use `local-llm-4bit` profile, or upgrade to L40s/A100 |
+| First startup takes 10+ min | Model downloading from HuggingFace | Normal on first run; cached after in `huggingface_cache` volume |
+| App gets errors calling vLLM | Wrong port in `OPENAI_BASE_URL` | Use `http://vllm:8000/v1` (internal port 8000, not 8001) |
+| `model not found` error | Model name mismatch | BF16: `Qwen/Qwen3-VL-8B-Instruct`; AWQ: `Qwen/Qwen3-VL-8B-Instruct-AWQ` |
+| warmup shows "still waiting..." | Model still loading/downloading | Normal — check `docker compose logs vllm` for progress |

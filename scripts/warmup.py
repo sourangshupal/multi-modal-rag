@@ -106,8 +106,58 @@ def warmup_ollama_glmocr(host: str, port: int, model: str) -> None:
         logger.warning(f"[warmup] GLM-OCR Ollama warmup skipped: {exc}")
 
 
+def warmup_vllm(base_url: str, timeout_seconds: int = 300) -> None:
+    """Poll vLLM /health until ready or timeout.
+
+    Only runs when OPENAI_BASE_URL is set and does not contain 'runpod.ai'.
+    On first container start, model download can take 3–10 minutes, hence the
+    generous default timeout.
+    """
+    if "runpod.ai" in base_url:
+        logger.info("[warmup] vLLM: RunPod URL detected — skipping local warmup")
+        return
+
+    # Strip /v1 suffix to get the vLLM server root, then append /health
+    root = base_url.rstrip("/")
+    if root.endswith("/v1"):
+        root = root[:-3]
+    health_url = f"{root}/health"
+
+    logger.info(f"[warmup] vLLM: polling {health_url} (timeout={timeout_seconds}s)...")
+    t0 = time.monotonic()
+    last_log = t0
+
+    while True:
+        elapsed = time.monotonic() - t0
+        if elapsed >= timeout_seconds:
+            logger.warning(
+                f"[warmup] vLLM: timed out after {timeout_seconds}s — "
+                "model may still be loading; continuing anyway"
+            )
+            return
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                resp = client.get(health_url)
+                if resp.status_code == 200:
+                    logger.info(f"[warmup] vLLM: ready in {elapsed:.1f}s")
+                    return
+        except Exception:
+            pass
+
+        now = time.monotonic()
+        if now - last_log >= 30:
+            logger.info(f"[warmup] vLLM: still waiting... ({int(now - t0)}s elapsed)")
+            last_log = now
+        time.sleep(5)
+
+
 def main() -> None:
     settings = get_settings()
+
+    # vLLM readiness — runs whenever a non-RunPod OPENAI_BASE_URL is configured,
+    # independent of PARSER_BACKEND.
+    if settings.openai_base_url:
+        warmup_vllm(settings.openai_base_url)
 
     if settings.parser_backend != "ollama":
         logger.info("[warmup] PARSER_BACKEND != ollama — skipping GPU warmup")

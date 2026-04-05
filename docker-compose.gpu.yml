@@ -23,6 +23,12 @@ services:
         condition: service_started
       ollama:
         condition: service_healthy
+      vllm:
+        condition: service_healthy
+        required: false
+      vllm-4bit:
+        condition: service_healthy
+        required: false
     # PP-DocLayoutV3 runs on GPU — same device as Ollama (GLM-OCR).
     deploy:
       resources:
@@ -69,6 +75,71 @@ services:
       retries: 6
       start_period: 30s
     # GLM-OCR (0.9B) offloaded entirely to GPU — ~2 GB VRAM
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    profiles:
+      - local-llm
+    ports:
+      - "8001:8000"
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - huggingface_cache:/root/.cache/huggingface
+    command: >
+      --model Qwen/Qwen3-VL-8B-Instruct
+      --port 8000
+      --dtype bfloat16
+      --gpu-memory-utilization 0.45
+      --max-model-len 32768
+      --mm-encoder-tp-mode data
+      --limit-mm-per-prompt image=10
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  vllm-4bit:
+    image: vllm/vllm-openai:latest
+    profiles:
+      - local-llm-4bit
+    ports:
+      - "8001:8000"
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - huggingface_cache:/root/.cache/huggingface
+    command: >
+      --model Qwen/Qwen3-VL-8B-Instruct-AWQ
+      --quantization awq
+      --port 8000
+      --dtype bfloat16
+      --gpu-memory-utilization 0.40
+      --max-model-len 32768
+      --mm-encoder-tp-mode data
+      --limit-mm-per-prompt image=10
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 240s
     deploy:
       resources:
         reservations:
