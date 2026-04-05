@@ -4,6 +4,23 @@ Complete reference for testing the `qwen` branch end-to-end.
 
 ---
 
+## Two Testing Modes
+
+There are two ways to run and test this branch. Choose one:
+
+| | **Mode A — FastAPI Direct** | **Mode B — Full Docker Compose** |
+|---|---|---|
+| **What runs in Docker** | Qdrant + Ollama + vLLM only | Everything (including the FastAPI app) |
+| **FastAPI app** | Runs on your host with `python scripts/serve.py` | Runs inside the `app` container |
+| **Model warm-up** | You run `python scripts/warmup.py` manually before starting the server | Automatic — the container runs `warmup.py` before `serve.py` |
+| **Model loading** | Embedding + reranker load lazily on first request | Same lazy loading, but warm-up fires Ollama and polls vLLM first |
+| **Best for** | Development, debugging, watching logs in real time | Production-style testing, Lightning.ai deployment |
+| **`.env` addresses** | `QDRANT_URL=http://localhost:6333`, `OPENAI_BASE_URL=http://localhost:8001/v1` | `OPENAI_BASE_URL=http://vllm:8000/v1` (Docker overrides QDRANT_URL internally) |
+
+> **Recommended for students:** Start with Mode A — you see every log line as it happens and can iterate fast. Switch to Mode B once everything works end-to-end.
+
+---
+
 ## Stack Overview
 
 | Component | Model / Service | Runs Where |
@@ -92,12 +109,12 @@ source .venv/bin/activate
 # Base + dev tools
 uv pip install -e ".[dev]"
 
-# Qwen local models (embedding + reranker)
-uv pip install -e ".[qwen]"
+# Qwen local models (embedding + reranker) + layout detection (PP-DocLayout-V3)
+uv pip install -e ".[qwen,layout]"
 ```
 
-> The `[qwen]` extra installs `transformers`, `torch`, `accelerate`, and `Pillow`.
-> First load of each model downloads ~4–5 GB from HuggingFace.
+> `[qwen]` installs `transformers`, `torch`, `accelerate`, `Pillow` (~4–5 GB download each model, first run only).
+> `[layout]` installs PP-DocLayout-V3 dependencies needed for Ollama parsing mode.
 
 ### 3.3 Create `.env`
 
@@ -105,19 +122,21 @@ uv pip install -e ".[qwen]"
 cp .env.example .env
 ```
 
-Fill in `.env`:
+**Choose the block that matches your testing mode:**
+
+#### Mode A — FastAPI Direct (app runs on host, services in Docker)
+
+`OPENAI_BASE_URL` uses the **host-side** port (8001) because the Python process is outside Docker.
 
 ```dotenv
-# ── Parser — Ollama local (no Z_AI_API_KEY needed) ────────────
+# ── Parser — Ollama local ──────────────────────────────────────
 PARSER_BACKEND=ollama
 
-# ── LLM — local vLLM on GPU (no RunPod key needed) ────────────
-OPENAI_API_KEY=local-token             # any non-empty string
-OPENAI_BASE_URL=http://vllm:8000/v1   # internal Docker network
+# ── LLM — local vLLM (host-side port) ─────────────────────────
+OPENAI_API_KEY=local-token
+OPENAI_BASE_URL=http://localhost:8001/v1    # ← localhost, not vllm
 OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct
-
-# For L4 (24 GB) use AWQ instead:
-# OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct-AWQ
+# AWQ on L4: OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct-AWQ
 
 # ── Embedding — local Qwen ────────────────────────────────────
 EMBEDDING_PROVIDER=qwen
@@ -129,6 +148,44 @@ RERANKER_BACKEND=qwen
 RERANKER_TOP_N=5
 
 # ── Qdrant ────────────────────────────────────────────────────
+QDRANT_URL=http://localhost:6333            # ← localhost, not qdrant
+QDRANT_API_KEY=
+QDRANT_COLLECTION_NAME=documents
+
+# ── Feature flags ─────────────────────────────────────────────
+IMAGE_CAPTION_ENABLED=true
+
+# ── API server ────────────────────────────────────────────────
+API_HOST=0.0.0.0
+API_PORT=8000
+API_WORKERS=1
+LOG_JSON=false
+```
+
+#### Mode B — Full Docker Compose (everything in Docker)
+
+`OPENAI_BASE_URL` uses the **internal Docker network** name. `QDRANT_URL` is overridden automatically by `docker-compose.gpu.yml` — the `.env` value is ignored.
+
+```dotenv
+# ── Parser — Ollama local ──────────────────────────────────────
+PARSER_BACKEND=ollama
+
+# ── LLM — local vLLM (internal Docker network) ────────────────
+OPENAI_API_KEY=local-token
+OPENAI_BASE_URL=http://vllm:8000/v1        # ← Docker internal name
+OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct
+# AWQ on L4: OPENAI_LLM_MODEL=Qwen/Qwen3-VL-8B-Instruct-AWQ
+
+# ── Embedding — local Qwen ────────────────────────────────────
+EMBEDDING_PROVIDER=qwen
+QWEN_EMBEDDING_MODEL=Qwen/Qwen3-VL-Embedding-2B
+EMBEDDING_DIMENSIONS=2048
+
+# ── Reranker — local Qwen ─────────────────────────────────────
+RERANKER_BACKEND=qwen
+RERANKER_TOP_N=5
+
+# ── Qdrant (value overridden inside container to http://qdrant:6333) ──
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=
 QDRANT_COLLECTION_NAME=documents
@@ -143,29 +200,38 @@ API_WORKERS=1
 LOG_JSON=false
 ```
 
-### 3.4 Start the Full Stack (local GPU mode)
+### 3.4 Start Infrastructure Services (required for both modes)
+
+Both modes need Qdrant, Ollama, and vLLM running in Docker. Start them first:
 
 ```bash
-# A100 / L40s — BF16 full precision
-COMPOSE_PROFILES=local-llm docker compose -f docker-compose.gpu.yml up -d
+# A100 / L40s — BF16
+COMPOSE_PROFILES=local-llm docker compose -f docker-compose.gpu.yml up qdrant ollama vllm -d
 
-# L4 (24 GB) — 4-bit AWQ
-COMPOSE_PROFILES=local-llm-4bit docker compose -f docker-compose.gpu.yml up -d
+# L4 — AWQ 4-bit
+COMPOSE_PROFILES=local-llm-4bit docker compose -f docker-compose.gpu.yml up qdrant ollama vllm-4bit -d
 ```
 
-On first run, pull the GLM-OCR model into the Ollama container before ingesting any documents:
+**Pull GLM-OCR into Ollama (first time only):**
 
 ```bash
+# Wait ~15s for Ollama to be ready, then:
 docker compose -f docker-compose.gpu.yml exec ollama ollama pull glm-ocr:latest
+
+# Verify
+docker compose -f docker-compose.gpu.yml exec ollama ollama list
+# → glm-ocr:latest   ...   600 MB
 ```
 
-Verify the stack is healthy:
+**Verify all infrastructure is healthy:**
 
 ```bash
 curl http://localhost:6333/healthz    # → {"title":"qdrant - vector search engine"}
-curl http://localhost:8001/health     # → HTTP 200 (vLLM ready)
-curl http://localhost:8000/health     # → {"status":"ok",...}
+curl http://localhost:8001/health     # → HTTP 200 (vLLM ready — may take 5-15 min first run)
+docker compose -f docker-compose.gpu.yml exec ollama ollama list   # → glm-ocr:latest present
 ```
+
+> vLLM takes 5–15 minutes on first run (downloading ~15 GB BF16 or ~5 GB AWQ model). Watch: `docker compose -f docker-compose.gpu.yml logs -f vllm`
 
 ---
 
@@ -190,22 +256,22 @@ uv run pytest tests/unit/test_generate.py -v
 
 ---
 
-## 5. Integration Tests (require live API keys)
+## 5. Integration Tests (require infrastructure running)
 
-These make real network calls. Set your keys in `.env` first.
+These make real calls to Qdrant, Ollama, and vLLM. Complete Section 3.4 first (all services must be healthy).
 
 ```bash
 # Full integration suite
 uv run pytest tests/integration/ -v -m integration
 
-# Parse only (needs Z_AI_API_KEY)
+# Parse only (needs Ollama + glm-ocr model pulled)
 uv run pytest tests/integration/test_pipeline_e2e.py -v
 
-# Full ingest pipeline (needs Z_AI_API_KEY + OPENAI_API_KEY)
+# Full ingest pipeline (needs Ollama + vLLM + Qdrant)
 uv run pytest tests/integration/test_ingest_e2e.py -v
 ```
 
-Tests auto-skip if the required keys are absent.
+Tests auto-skip if the required services are not reachable.
 
 ---
 
@@ -243,11 +309,10 @@ python scripts/ingest.py data/raw/paper.pdf --overwrite
 ```
 
 **What to watch for in the logs:**
-- `QwenVLEmbedder loaded ... on cuda:0` (or `mps` / `cpu`) — model loaded
-- `Captioning N table/formula/algorithm chunks` — RunPod LLM being called
+- `QwenVLEmbedder loaded ... on cuda:0` (or `mps` / `cpu`) — embedding model loaded onto GPU
+- `Captioning N table/formula/algorithm chunks` — local vLLM being called for captions
 - `Image chunk: cropped bbox, stored image_base64` — images handled locally (no LLM call)
-- `Upserted N points` — vectors stored in Qdrant
-- No errors in the RunPod call (if RunPod cold-starts, expect 30–90 s pause on first table chunk)
+- `Upserted N points` — vectors successfully stored in Qdrant
 
 ### Step 3 — Search + rerank
 
@@ -271,22 +336,80 @@ python scripts/search.py "query" --no-rerank
 
 ---
 
-## 7. API Server Testing
+## 7. FastAPI Server Testing
 
-### Start the server
+---
+
+### Mode A — FastAPI Direct (app runs on host)
+
+#### Step 1 — Ensure infrastructure is running
+
+Complete Section 3.4 first. Verify before starting the server:
 
 ```bash
-python scripts/serve.py --reload
-# Server runs at http://localhost:8000
+curl http://localhost:6333/healthz   # Qdrant — must be healthy
+curl http://localhost:8001/health    # vLLM — must return HTTP 200
+docker compose -f docker-compose.gpu.yml exec ollama ollama list   # glm-ocr:latest must appear
 ```
 
-### Health check
+#### Step 2 — Warm up models (run once before starting the server)
+
+`warmup.py` does three things before the server opens for traffic:
+1. Polls vLLM `/health` until ready (handles the 5–15 min first-run download)
+2. Compiles NVRTC CUDA kernels for PP-DocLayout-V3 (eliminates ~90s first-request lag)
+3. Pre-loads glm-ocr into Ollama VRAM (eliminates cold-start on first parse)
+
+```bash
+python scripts/warmup.py
+```
+
+Expected output:
+```
+[warmup] vLLM: ready in Xs
+[warmup] PP-DocLayoutV3: weights loaded on cuda:0
+[warmup] PP-DocLayoutV3: ready in Xs (NVRTC kernels compiled and cached)
+[warmup] GLM-OCR: model loaded into GPU VRAM in Xs
+[warmup] All models hot — handing off to API server
+```
+
+> **If `warmup.py` is skipped:** the server starts fine but the first `/ingest` request will be slow — the embedding model, PP-DocLayout-V3, and GLM-OCR all cold-start simultaneously on the first call.
+
+#### Step 3 — Start the FastAPI server
+
+```bash
+# Development mode (auto-reload on code changes)
+python scripts/serve.py --reload
+
+# Production mode
+python scripts/serve.py
+```
+
+Server runs at `http://localhost:8000`. You will see startup logs:
+```
+Starting doc-parser API | parser=ollama | backend=qwen | collection=documents
+```
+
+#### Step 4 — Model loading sequence on first request
+
+Because models load lazily (on first use), here is exactly when each model loads:
+
+| Request | Model that loads | Where |
+|---|---|---|
+| `/ingest` (first call) | Qwen3-VL-Embedding-2B (~4–5 GB download, first run) | In-process GPU |
+| `/ingest` (first call) | PP-DocLayout-V3 weights (~400 MB, first run) | In-process GPU |
+| `/ingest` (first call) | GLM-OCR via Ollama | Already in VRAM (warmup loaded it) |
+| `/ingest` with tables | Qwen3-VL-8B-Instruct (caption call) | vLLM container (already hot) |
+| `/search` (first call) | Qwen3-VL-Reranker-2B (~4–5 GB download, first run) | In-process GPU |
+
+> Running `warmup.py` first means vLLM and Ollama are guaranteed hot. Embedding and reranker still load on first `/ingest` and `/search` respectively — this is normal.
+
+#### Step 5 — Health check
 
 ```bash
 curl http://localhost:8000/health | python -m json.tool
 ```
 
-Expected response:
+Expected:
 ```json
 {
   "status": "ok",
@@ -296,24 +419,48 @@ Expected response:
 }
 ```
 
-> `openai` shows `skipped` because embedding is local Qwen — this is correct.
+> `openai: skipped` is correct — embedding uses local Qwen, not the OpenAI API.
 
-### Ingest via API
+#### Step 6 — Ingest a PDF
 
 ```bash
 curl -X POST http://localhost:8000/ingest \
   -F "file=@data/raw/paper.pdf"
 ```
 
-### Search via API
+Watch the server logs. You should see:
+```
+QwenVLEmbedder loaded Qwen/Qwen3-VL-Embedding-2B on cuda:0
+Captioning N table/formula/algorithm chunks      ← vLLM call
+Image chunk: cropped bbox, stored image_base64   ← local crop, no LLM
+Upserted N points
+```
+
+#### Step 7 — Search
 
 ```bash
+# Basic search
 curl -X POST http://localhost:8000/search \
   -H "Content-Type: application/json" \
   -d '{"query": "what does table 2 show?", "top_k": 10, "top_n": 5}'
+
+# Filter by modality
+curl -X POST http://localhost:8000/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "accuracy results", "top_k": 20, "top_n": 5, "filter_modality": "table"}'
 ```
 
-### RAG generation via API
+On first call, the reranker loads:
+```
+QwenVLReranker loaded Qwen/Qwen3-VL-Reranker-2B on cuda:0
+```
+
+**What to verify in the response:**
+- Results have `rerank_score` > 0 (reranker is working)
+- Image chunks include `image_base64` in payload
+- Table chunks show markdown content in `text` or `caption`
+
+#### Step 8 — RAG generation
 
 ```bash
 curl -X POST http://localhost:8000/generate \
@@ -322,15 +469,94 @@ curl -X POST http://localhost:8000/generate \
 ```
 
 **What to verify:**
-- Response includes `answer` (text from Qwen3-VL-8B)
-- Response includes `sources` array with chunks used
-- Sources include `modality`, `page`, `rerank_score`
-- For table/image queries, `image_base64` is present in sources (visual context was passed to VLM)
+- Response includes `answer` field (text from Qwen3-VL-8B via local vLLM)
+- Response includes `sources` array (chunks used as context)
+- Each source has `modality`, `page`, `rerank_score`
+- For table/image queries: `image_base64` is present in sources (image passed to VLM)
 
-### List collections
+#### Step 9 — List collections
 
 ```bash
 curl http://localhost:8000/collections | python -m json.tool
+```
+
+---
+
+### Mode B — Full Docker Compose (everything in Docker)
+
+In this mode the `app` container runs `warmup.py` automatically before starting the FastAPI server. **You do not run anything manually** — just start the stack and test via curl.
+
+#### Step 1 — Start the full stack
+
+```bash
+# A100 / L40s — BF16
+COMPOSE_PROFILES=local-llm docker compose -f docker-compose.gpu.yml up -d
+
+# L4 — AWQ 4-bit
+COMPOSE_PROFILES=local-llm-4bit docker compose -f docker-compose.gpu.yml up -d
+```
+
+#### Step 2 — Pull GLM-OCR model (first time only)
+
+```bash
+docker compose -f docker-compose.gpu.yml exec ollama ollama pull glm-ocr:latest
+```
+
+#### Step 3 — Watch the warm-up sequence
+
+The `app` container runs `warmup.py` before accepting traffic. Follow the logs:
+
+```bash
+docker compose -f docker-compose.gpu.yml logs -f app
+```
+
+The sequence you will see:
+```
+[warmup] vLLM: polling http://vllm:8000/health (timeout=300s)...
+[warmup] vLLM: ready in Xs
+[warmup] PP-DocLayoutV3: loading weights onto GPU...
+[warmup] PP-DocLayoutV3: ready in Xs (NVRTC kernels compiled and cached)
+[warmup] GLM-OCR: loading glm-ocr:latest into Ollama VRAM...
+[warmup] GLM-OCR: model loaded into GPU VRAM in Xs
+[warmup] All models hot — handing off to API server
+Starting doc-parser API | parser=ollama | backend=qwen | collection=documents
+```
+
+> On first container start, vLLM downloads the model (~15 GB BF16 / ~5 GB AWQ). The warm-up waits up to 5 minutes. Watch vLLM progress separately: `docker compose -f docker-compose.gpu.yml logs -f vllm`
+
+#### Step 4 — Verify the stack
+
+```bash
+docker compose -f docker-compose.gpu.yml ps   # all containers should be "healthy" or "running"
+
+curl http://localhost:8000/health | python -m json.tool
+# Expected: {"status":"ok","qdrant":"ok","openai":"skipped (embedding_provider=qwen)","reranker_backend":"qwen"}
+```
+
+#### Step 5 — Test via API (same curl commands as Mode A)
+
+```bash
+# Ingest
+curl -X POST http://localhost:8000/ingest \
+  -F "file=@data/raw/paper.pdf"
+
+# Search
+curl -X POST http://localhost:8000/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "what does table 2 show?", "top_k": 10, "top_n": 5}'
+
+# RAG generation
+curl -X POST http://localhost:8000/generate \
+  -H "Content-Type: application/json" \
+  -d '{"query": "summarise the key results from the tables"}'
+
+# List collections
+curl http://localhost:8000/collections | python -m json.tool
+```
+
+Watch container logs in real time:
+```bash
+docker compose -f docker-compose.gpu.yml logs -f app
 ```
 
 ---
