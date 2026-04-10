@@ -1,39 +1,62 @@
 # GPU image — use with docker-compose.gpu.yml on NVIDIA hardware (Lightning AI, etc.)
 # PP-DocLayoutV3 runs on GPU in this container (standard PyTorch ops, no NVRTC/JIT).
 # GLM-OCR inference runs on GPU inside the Ollama container via nvidia device passthrough.
-# python:3.12-slim works fine — PyTorch cu124 bundles its own CUDA runtime libraries.
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps required by PyMuPDF and OpenCV
+# System deps:
+#   - libgl1, libglib2.0-0 → required by PyMuPDF and OpenCV
+#   - wget, gnupg, ca-certificates → fetch the NVIDIA CUDA APT keyring
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
+    libgl1 libglib2.0-0 wget gnupg ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# CUDA Forward Compatibility: install cuda-compat-13-1 so that PyTorch wheels
+# built against CUDA 13.x can run on host drivers as old as R510.
+#   - glmocr[layout] hard-requires torch>=2.10.0 → torch wheels for that version
+#     only ship with CUDA 12.8+ (cu128/cu130).
+#   - Many host drivers (e.g. R550 on Lightning AI) only natively support CUDA
+#     12.4, so cu130 binaries fail with "driver too old" without forward compat.
+#   - cuda-compat-13-1 provides a userspace libcuda.so equivalent to driver 590,
+#     which translates CUDA 13.x API calls down to the older kernel driver. This
+#     is officially supported on data-center class GPUs (L40S, A100, H100, etc.)
+#     and is required for torch.cuda.is_available() to return True.
+RUN wget -qO /tmp/cuda-keyring.deb \
+    https://developer.download.nvidia.com/compute/cuda/repos/debian13/x86_64/cuda-keyring_1.1-1_all.deb && \
+    dpkg -i /tmp/cuda-keyring.deb && rm /tmp/cuda-keyring.deb && \
+    apt-get update && apt-get install -y --no-install-recommends cuda-compat-13-1 && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN pip install uv --no-cache-dir
 
-# Install CUDA 12.4 PyTorch — PP-DocLayoutV3 runs on GPU (L4, compute 8.9).
-# Use --index-url (not --extra-index-url) to prevent pip falling back to PyPI
-# and pulling a cu130 wheel, which does NOT bundle libnvrtc-builtins.so.13.0.
-# The cu124 wheel bundles libnvrtc-builtins.so.12.4.X in torch/lib/, and
-# CUDA driver 13.0 is backward-compatible with toolkit 12.4.
+# Install PyTorch from the cu128 wheel index. cu128 is the lowest CUDA toolkit
+# version that ships torch>=2.10 wheels (required by glmocr[layout]). The
+# cuda-compat-13-1 package above lets these binaries run on R5xx host drivers.
 RUN uv pip install --system --no-cache \
     torch torchvision \
-    --index-url https://download.pytorch.org/whl/cu124
+    --index-url https://download.pytorch.org/whl/cu128
 
-# Install remaining deps (layer cache)
+# Install remaining deps (layer cache). Pin the torch index too so that
+# glmocr[layout]'s torch>=2.10 constraint resolves against the cu128 wheel
+# already installed and doesn't pull a cu130 wheel from PyPI on top.
 COPY pyproject.toml .
-RUN uv pip install --system --no-cache -e ".[layout]"
+RUN uv pip install --system --no-cache -e ".[layout]" \
+    --index-url https://download.pytorch.org/whl/cu128 \
+    --extra-index-url https://pypi.org/simple
 
 COPY src/ src/
 COPY scripts/ scripts/
 COPY config.yaml .
 COPY ollama/config.yaml ollama/config.yaml
 
-# Add CUDA 13 runtime libs to LD_LIBRARY_PATH so dlopen finds libnvrtc-builtins.so.13.0.
-# PyTorch cu130 installs it under nvidia/cu13/lib/ but doesn't add that dir to the
-# dynamic linker search path, causing NVRTC JIT to fail at inference time.
-ENV LD_LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cu13/lib:$LD_LIBRARY_PATH
+# Dynamic linker path:
+#   - /usr/local/cuda-13.1/compat first → forces dlopen to find the compat
+#     libcuda.so.1 (driver 590) before the host's older libcuda.so.1 (driver
+#     550) at /usr/lib/x86_64-linux-gnu/. Order matters.
+#   - PyTorch's bundled NVRTC libs (libnvrtc-builtins.so.13.0) live under
+#     nvidia/cu13/lib/ but that dir isn't in the default search path.
+ENV LD_LIBRARY_PATH=/usr/local/cuda-13.1/compat:/usr/local/lib/python3.12/site-packages/nvidia/cu13/lib:$LD_LIBRARY_PATH
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 

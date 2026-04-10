@@ -94,13 +94,13 @@ services:
     volumes:
       - huggingface_cache:/root/.cache/huggingface
     command: >
-      --model Qwen/Qwen3-VL-8B-Instruct
+      --model cyankiwi/Qwen3-VL-4B-Instruct-AWQ-4bit
       --port 8000
       --dtype bfloat16
-      --gpu-memory-utilization 0.85
+      --gpu-memory-utilization 0.3167
       --max-model-len 8192
       --mm-encoder-tp-mode data
-      --limit-mm-per-prompt image=10
+ #     --limit-mm-per-prompt image=10
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

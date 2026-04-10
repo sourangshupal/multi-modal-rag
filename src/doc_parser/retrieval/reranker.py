@@ -286,75 +286,207 @@ class BGEReranker(BaseReranker):
 
 
 class QwenVLReranker(BaseReranker):
-    """Re-rank using Qwen3-VL-Reranker-2B (local, multimodal).
+    """Re-rank using Qwen3-VL-Reranker-2B (local, multimodal, GPU-accelerated).
 
-    Ranked #1 on MMEB-V2.  Can consume ``image_base64`` directly.
-    Requires ~8–12 GB RAM.  Uses Apple Silicon MPS if available.
+    Implements the official scoring pattern from
+    https://huggingface.co/Qwen/Qwen3-VL-Reranker-2B :
 
-    Requires: ``pip install transformers>=4.51.0 torch>=2.7.0``
-    Cost: free (local).
-    Latency: ~400–800ms on Apple Silicon MPS; ~1–2s on CPU.
+      1. Format ``(query, doc)`` as a chat prompt with a yes/no instruction.
+      2. Forward pass through the backbone (``Qwen3VLModel``) to get the last
+         hidden state of the final input token.
+      3. Project that hidden state through a binary linear layer whose weight
+         is ``lm_head[yes_id] - lm_head[no_id]`` to obtain a scalar logit
+         equivalent to ``logit("yes") − logit("no")`` from the LM head.
+      4. Sigmoid → relevance probability in ``(0, 1)``.
+
+    This is mathematically the same as taking ``softmax([logit_yes, logit_no])[0]``
+    over a generative LM's output — the standard generative-reranker score.
+
+    Memory: ~5 GB in bfloat16 (Qwen3-VL-Reranker-2B is a 2B-param model + ViT).
+    Latency: ~150–400 ms per (query, doc) pair on an L40S, depending on doc size
+    and whether the doc contains an image.
     """
 
     _MODEL_NAME = "Qwen/Qwen3-VL-Reranker-2B"
+    _MAX_LENGTH = 8192
+    _MAX_DOC_TEXT_CHARS = 4000  # ~1000 tokens — bounds prompt growth from huge chunks
+    _DEFAULT_INSTRUCTION = (
+        "Given a search query, retrieve relevant candidates that answer the query."
+    )
+    _SYSTEM_PROMPT = (
+        "Judge whether the Document meets the requirements based on the Query "
+        'and the Instruct provided. Note that the answer can only be "yes" or "no".'
+    )
 
     def __init__(self, settings: Settings) -> None:  # noqa: ARG002
         try:
             import torch
-            from transformers import AutoModelForSequenceClassification, AutoProcessor
+            from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
         except ImportError as exc:
             raise ImportError(
-                "Qwen VL reranker requires transformers and torch. "
+                "Qwen VL reranker requires transformers>=4.57 and torch. "
                 "Install with: uv pip install 'doc-parser[qwen]'"
             ) from exc
 
-        import torch
-
-        self._device = "mps" if torch.backends.mps.is_available() else "cpu"
-        logger.info("Loading Qwen3-VL-Reranker-2B on device=%s", self._device)
-
-        self._processor = AutoProcessor.from_pretrained(self._MODEL_NAME)
-        self._model = AutoModelForSequenceClassification.from_pretrained(
+        # Device + dtype: prefer CUDA + bf16 (Ampere/Ada/Hopper), fall back to
+        # MPS (fp16) on Apple Silicon, then CPU (fp32). bf16 matches the model's
+        # native dtype and avoids overflow in the LM head projection.
+        if torch.cuda.is_available():
+            self._device = torch.device("cuda")
+            self._dtype = torch.bfloat16
+        elif torch.backends.mps.is_available():
+            self._device = torch.device("mps")
+            self._dtype = torch.float16
+        else:
+            self._device = torch.device("cpu")
+            self._dtype = torch.float32
+        logger.info(
+            "Loading %s on device=%s dtype=%s",
             self._MODEL_NAME,
-            torch_dtype=torch.float16 if self._device != "cpu" else torch.float32,
-        ).to(self._device)
-        self._model.eval()
+            self._device,
+            self._dtype,
+        )
 
-    def _score_one_sync(self, query: str, candidate: dict[str, Any]) -> float:
-        """Score a single (query, candidate) pair synchronously."""
+        # Load the full ConditionalGeneration model first so we can copy
+        # lm_head weights into the binary score head, then keep only the
+        # backbone (lm.model) for inference.
+        lm = Qwen3VLForConditionalGeneration.from_pretrained(
+            self._MODEL_NAME,
+            trust_remote_code=True,
+            torch_dtype=self._dtype,
+        ).to(self._device)
+        lm.eval()
+
+        # padding_side="left" is required by the upstream wrapper: the score is
+        # read from the *last* token of each sequence, so left-padding ensures
+        # padded positions never become the "last token".
+        self._processor = AutoProcessor.from_pretrained(
+            self._MODEL_NAME,
+            trust_remote_code=True,
+            padding_side="left",
+        )
+
+        # Build the binary linear scorer: weight = lm_head[yes_id] - lm_head[no_id].
+        # Applied to the backbone's last-token hidden state, this yields a scalar
+        # equal to (logit_yes - logit_no), whose sigmoid is P(yes | input).
+        token_yes_id = self._processor.tokenizer.get_vocab()["yes"]
+        token_no_id = self._processor.tokenizer.get_vocab()["no"]
+        lm_head_w = lm.lm_head.weight.data  # [vocab, hidden]
+        weight_diff = lm_head_w[token_yes_id] - lm_head_w[token_no_id]  # [hidden]
+        hidden_size = weight_diff.shape[0]
+        self._score_linear = torch.nn.Linear(hidden_size, 1, bias=False)
+        with torch.no_grad():
+            self._score_linear.weight[0] = weight_diff
+        self._score_linear = self._score_linear.to(self._device, dtype=self._dtype)
+        self._score_linear.eval()
+
+        # Drop the LM head — we don't need it for inference and freeing the
+        # reference lets the allocator reclaim ~600 MB of vocab projection.
+        self._backbone = lm.model
+        self._backbone.eval()
+        del lm
+        if self._device.type == "cuda":
+            torch.cuda.empty_cache()
+
+    def _build_messages(
+        self,
+        query: str,
+        candidate: dict[str, Any],
+        instruction: str | None = None,
+    ) -> tuple[list[dict[str, Any]], list[Any]]:
+        """Build the chat-message structure for one (query, doc) pair.
+
+        Mirrors the official ``format_mm_instruction`` from the model card:
+
+            system: "Judge whether the Document meets the requirements ... yes / no."
+            user:   <Instruct>: {instruction}
+                    <Query>: {query_text}
+                    \\n<Document>: [optional image] {doc_text}
+
+        Returns the message list (for ``apply_chat_template``) and the list of
+        PIL images embedded in the doc, which the processor needs as ``images=``.
+        """
         import base64
         import io
 
-        import torch
         from PIL import Image
 
-        text = candidate.get("text") or ""
+        instruct = instruction or self._DEFAULT_INSTRUCTION
+        text = (candidate.get("text") or "").strip()
         image_b64 = candidate.get("image_base64")
         modality = candidate.get("modality", "text")
 
+        # Document content: text + optional image. Order matches upstream
+        # (prefix label, then image, then text body).
+        doc_content: list[dict[str, Any]] = [{"type": "text", "text": "\n<Document>:"}]
+        doc_images: list[Any] = []
         if modality == "image" and image_b64:
-            img_bytes = base64.b64decode(image_b64)
-            image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-            inputs = self._processor(
-                text=[[query, text]],
-                images=[image],
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=512,
-            ).to(self._device)
-        else:
-            inputs = self._processor(
-                text=[[query, text[:2000]]],
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=512,
-            ).to(self._device)
+            pil = Image.open(io.BytesIO(base64.b64decode(image_b64))).convert("RGB")
+            doc_content.append({"type": "image", "image": pil})
+            doc_images.append(pil)
+        if text:
+            doc_content.append({"type": "text", "text": text[: self._MAX_DOC_TEXT_CHARS]})
+        if not text and not doc_images:
+            doc_content.append({"type": "text", "text": "NULL"})
+
+        messages: list[dict[str, Any]] = [
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": self._SYSTEM_PROMPT}],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "<Instruct>: " + instruct},
+                    {"type": "text", "text": "<Query>:"},
+                    {"type": "text", "text": query or "NULL"},
+                    *doc_content,
+                ],
+            },
+        ]
+        return messages, doc_images
+
+    def _score_one_sync(self, query: str, candidate: dict[str, Any]) -> float:
+        """Score a single (query, candidate) pair synchronously on the GPU."""
+        import torch
+
+        messages, images = self._build_messages(query, candidate)
+
+        # apply_chat_template renders the message structure into the model's
+        # tokenizer-ready text, substituting <|vision_start|><|image_pad|><|vision_end|>
+        # for each {"type": "image", ...} block. add_generation_prompt=True appends
+        # the assistant turn header so the *next* token is where we read the score.
+        text = self._processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        inputs = self._processor(
+            text=[text],
+            images=images if images else None,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=self._MAX_LENGTH,
+        ).to(self._device)
 
         with torch.no_grad():
-            logits = self._model(**inputs).logits
-        return float(logits[0].item())
+            outputs = self._backbone(**inputs)
+            last_hidden = outputs.last_hidden_state[:, -1, :]  # [1, hidden]
+            logit = self._score_linear(last_hidden)  # [1, 1]
+            score = torch.sigmoid(logit).squeeze(-1)  # [1]
+
+        return float(score.float().cpu().item())
+
+    def _score_all_sync(
+        self, query: str, candidates: list[dict[str, Any]]
+    ) -> list[float]:
+        """Score every candidate sequentially in a single thread-pool task.
+
+        Per-pair forward passes (matching upstream) avoid the variable-size
+        image-batching headaches; running them in one executor call avoids
+        ``asyncio.gather`` spawning N threads that would all serialize at the
+        single CUDA stream and just thrash the GIL.
+        """
+        return [self._score_one_sync(query, c) for c in candidates]
 
     async def rerank(
         self,
@@ -362,15 +494,16 @@ class QwenVLReranker(BaseReranker):
         candidates: list[dict[str, Any]],
         top_n: int = 5,
     ) -> list[dict[str, Any]]:
-        """Score candidates via Qwen VL (offloaded to thread pool) and return top-n."""
+        """Score candidates via Qwen3-VL-Reranker and return the top-n."""
+        if not candidates:
+            return []
         loop = asyncio.get_running_loop()
-
-        async def score_one(c: dict[str, Any]) -> float:
-            return await loop.run_in_executor(None, self._score_one_sync, query, c)
-
-        scores = await asyncio.gather(*[score_one(c) for c in candidates])
+        scores = await loop.run_in_executor(
+            None, self._score_all_sync, query, candidates
+        )
         scored = [
-            {**c, "rerank_score": float(score)} for c, score in zip(candidates, scores, strict=True)
+            {**c, "rerank_score": float(score)}
+            for c, score in zip(candidates, scores, strict=True)
         ]
         scored.sort(key=lambda x: x["rerank_score"], reverse=True)
         return scored[:top_n]

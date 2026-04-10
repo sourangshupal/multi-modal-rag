@@ -60,3 +60,14 @@ pipeline:
 
   page_loader:
     max_tokens: 8192
+    # Per-task OCR prompts. The SDK passes these as the text prompt alongside
+    # each cropped region image. WITHOUT this mapping, prompt_text="" and
+    # glm-ocr returns empty responses — the result_formatter then renders
+    # paragraph_title regions as "## " (just the markdown prefix), doc_title
+    # as "# ", etc., losing all extracted text.
+    # Keys must match the task types used in label_task_mapping above.
+    task_prompt_mapping:
+      ocr: "Text Recognition:"
+      table: "Table Recognition:"
+      formula: "Formula Recognition:"
+      algorithm: "Text Recognition:"

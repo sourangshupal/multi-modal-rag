@@ -253,7 +253,17 @@ class QwenVLEmbedder(BaseEmbedder):
             Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
             for b64 in images_b64
         ]
-        inputs = self._processor(images=images, return_tensors="pt", padding=True)
+        # Qwen3VLProcessor requires a text input alongside images: each text must
+        # contain one <|image_pad|> placeholder, which the processor expands into
+        # the correct number of patch tokens based on the image's resolution.
+        # Without this, transformers passes text=[None] internally and crashes.
+        image_prompts = ["<|vision_start|><|image_pad|><|vision_end|>"] * len(images)
+        inputs = self._processor(
+            images=images,
+            text=image_prompts,
+            return_tensors="pt",
+            padding=True,
+        )
         inputs = {k: v.to(self._model.device) for k, v in inputs.items()}
         with torch.no_grad():
             outputs = self._model(**inputs)
