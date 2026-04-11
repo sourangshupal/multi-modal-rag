@@ -500,6 +500,17 @@ async def enrich_chunks(
                 chunk.caption = None
                 chunk.text = chunk.text or "[figure]"
         elif chunk.modality == "table":
+            # Always crop the table region first — the pixel crop is the most
+            # reliable multi-modal signal we have. Both the reranker and the
+            # generation LLM use this crop alongside any extracted text, and
+            # for tables where GLM-OCR failed to emit pipe-delimited markdown
+            # (see the skip branch below) the crop is the ONLY way the VLM
+            # can "see" the table structure.
+            if chunk.bbox is not None:
+                b64 = _crop_image_chunk(chunk, pdf_path)
+                if b64 is not None:
+                    chunk.image_base64 = b64
+
             # Pre-filter: PP-DocLayoutV3 sometimes mis-classifies caption
             # paragraphs (e.g. "Table 1: Runtime characteristics...",
             # "Figure 3: Page 6 of the DocLayNet paper...") as table regions.
@@ -507,26 +518,25 @@ async def enrich_chunks(
             # which makes the table-extraction LLM call wasteful (the model
             # has no actual table to convert to JSON) and also pollutes the
             # generate-time context with confusing "Full table data:" labels.
-            # Demote these chunks to plain text so they're treated as prose.
+            #
+            # We skip the LLM enrichment call for these chunks, but we TRUST
+            # the layout detector's label: modality stays "table" so retrieval
+            # still surfaces this chunk when the user asks a table question.
+            # Previously we demoted modality→text here, which ate real tables
+            # whose OCR output happened to have fewer than 3 pipe characters
+            # (short tables, numeric-only cells, truncated headers, etc.).
             if not _looks_like_table(chunk.text):
                 logger.info(
-                    "Demoting chunk %s from table → text: no tabular structure "
-                    "detected (pipes=%d, len=%d)",
+                    "Skipping LLM extraction for chunk %s (no tabular markers: "
+                    "pipes=%d, len=%d) — keeping modality=table, image cropped=%s",
                     chunk.chunk_id,
                     chunk.text.count("|"),
                     len(chunk.text),
+                    chunk.image_base64 is not None,
                 )
-                chunk.modality = "text"
-                counts["table_demoted"] += 1
+                counts["table_skipped"] += 1
                 continue
 
-            # Crop the table region for visual context — generation LLM can see the
-            # actual table layout (merged cells, multi-level headers) alongside the
-            # extracted markdown. Mirrors the image chunk crop pattern.
-            if chunk.bbox is not None:
-                b64 = _crop_image_chunk(chunk, pdf_path)
-                if b64 is not None:
-                    chunk.image_base64 = b64
             tasks.append(
                 _enrich_table_single(chunk, client, semaphore, model, pdf_path=pdf_path)
             )
@@ -545,9 +555,9 @@ async def enrich_chunks(
 
     logger.info(
         "Processed %d image (cropped, no LLM) / %d table / %d formula / %d algorithm "
-        "(+%d table→text demoted) chunks from %s",
+        "(+%d table LLM-skipped, modality preserved) chunks from %s",
         counts["image"], counts["table"], counts["formula"], counts["algorithm"],
-        counts["table_demoted"], pdf_path.name,
+        counts["table_skipped"], pdf_path.name,
     )
     return chunks
 

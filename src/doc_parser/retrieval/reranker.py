@@ -418,9 +418,16 @@ class QwenVLReranker(BaseReranker):
 
         # Document content: text + optional image. Order matches upstream
         # (prefix label, then image, then text body).
+        #
+        # Tables are included alongside images here: PP-DocLayoutV3 crops the
+        # table region at ingest (image_captioner.py:534) and stores the PNG
+        # in image_base64, so the Qwen VL reranker can see the actual layout
+        # (merged cells, multi-level headers, numeric cell alignment) in
+        # addition to the extracted markdown. This materially improves
+        # reranking quality for table-targeted queries.
         doc_content: list[dict[str, Any]] = [{"type": "text", "text": "\n<Document>:"}]
         doc_images: list[Any] = []
-        if modality == "image" and image_b64:
+        if image_b64 and modality in {"image", "table"}:
             pil = Image.open(io.BytesIO(base64.b64decode(image_b64))).convert("RGB")
             doc_content.append({"type": "image", "image": pil})
             doc_images.append(pil)

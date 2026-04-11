@@ -8,10 +8,20 @@ pipeline:
     api_path: /api/generate   # Ollama's native endpoint (NOT the OpenAI-compat one)
     model: glm-ocr:latest     # Must match what you pulled
     api_mode: ollama_generate  # Essential — prevents 502 errors
-    timeout: 1200              # 20 min per page — CPU inference in Docker is slow
+    # NB: the SDK reads `request_timeout`, NOT `timeout`. Extra keys are
+    # silently accepted by pydantic (extra="allow") so the wrong name just
+    # gets ignored and the default 120s applies — causing Read timeouts on
+    # slow GPUs where each region takes 30–90s.
+    request_timeout: 1200      # 20 min per region — GPU queueing can stack up
+    retry_max_attempts: 3
 
   enable_layout: true         # PP-DocLayout-V3 layout detection
                               # Requires: uv pip install "glmocr[layout]"
+
+  # Match OLLAMA_NUM_PARALLEL=4 (see docker-compose.gpu.yml). The SDK default
+  # of 32 stacks 32 workers onto 4 Ollama slots, which inflates per-region
+  # wall-clock time from ~30s to 1–2 minutes and triggers client timeouts.
+  max_workers: 4
 
   # Bug fix: region_maxsize must be an int (0 = unlimited). SDK default of null
   # causes Queue(maxsize=None) → TypeError in error handler.
