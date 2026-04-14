@@ -209,4 +209,4 @@ class QdrantDocumentStore:
             query_filter=query_filter,
         )
 
-        return [point.payload for point in results.points]
+        return [point.payload for point in results.points]  # type: ignore[misc]

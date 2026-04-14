@@ -37,7 +37,7 @@ def pdf_page_to_image(pdf_path: Path, page_num: int, dpi: int = 300) -> Image.Im
         page = doc.load_page(page_num)
         mat = fitz.Matrix(dpi / 72, dpi / 72)
         pix = page.get_pixmap(matrix=mat)
-        return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)  # type: ignore[arg-type]
     finally:
         doc.close()
 

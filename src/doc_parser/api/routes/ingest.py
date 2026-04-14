@@ -111,7 +111,7 @@ async def _run_ingest(
     # 2. Chunk — single pass over all pages so section headings and figure captions
     #    are linked correctly even across page boundaries.
     chunks = document_aware_chunking(
-        [(page.page_num, page.elements) for page in parse_result.pages],
+        [(page.page_num, page.elements) for page in parse_result.pages],  # type: ignore[misc]
         source_file=source_name,
         max_chunk_tokens=max_chunk_tokens,
     )

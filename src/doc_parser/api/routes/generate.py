@@ -125,7 +125,7 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
             model=settings.openai_llm_model,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": _build_user_content(context, req.query, candidates)},
+                {"role": "user", "content": _build_user_content(context, req.query, candidates)},  # type: ignore[misc,list-item]
             ],
             max_tokens=req.max_tokens,
             temperature=0.0,

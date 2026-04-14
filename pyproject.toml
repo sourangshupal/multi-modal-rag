@@ -61,5 +61,14 @@ ignore = ["E501", "B008"]
 [tool.ruff.format]
 quote-style = "double"
 
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = false
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["fitz", "tqdm.*", "torch.*", "transformers.*", "google.*", "glmocr.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

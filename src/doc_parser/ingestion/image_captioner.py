@@ -274,7 +274,7 @@ async def _enrich_image_single(
                 model=model,
                 messages=[
                     {"role": "system", "content": _IMAGE_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_content},
+                    {"role": "user", "content": user_content},  # type: ignore[misc,list-item]
                 ],
                 max_tokens=_IMAGE_MAX_TOKENS,
                 temperature=0.0,

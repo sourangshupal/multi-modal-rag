@@ -190,7 +190,7 @@ def get_embedder(settings: Settings) -> BaseEmbedder:
             f"Unknown embedding provider: {provider!r}. Choose from: {list(_PROVIDERS)}"
         )
     logger.info("Initialising embedding provider: %s", provider)
-    return _PROVIDERS[provider](settings)
+    return _PROVIDERS[provider](settings)  # type: ignore[call-arg]
 
 
 async def embed_chunks(

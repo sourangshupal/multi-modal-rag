@@ -122,7 +122,7 @@ class OpenAIReranker(BaseReranker):
         try:
             response = await self._client.chat.completions.create(
                 model=self._model,
-                messages=messages,
+                messages=messages,  # type: ignore[arg-type]
                 temperature=0.0,
                 max_tokens=4,
             )
@@ -406,4 +406,4 @@ def get_reranker(settings: Settings) -> BaseReranker:
             f"Choose from: {list(_BACKENDS)}"
         )
     logger.info("Initialising reranker backend: %s", backend)
-    return _BACKENDS[backend](settings)
+    return _BACKENDS[backend](settings)  # type: ignore[call-arg]

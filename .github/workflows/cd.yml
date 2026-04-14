@@ -22,13 +22,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+            docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
       - name: Build and push app image
         id: build-app
         run: |
           IMAGE=${{ env.ECR_REGISTRY }}/doc-parser/app:${{ github.sha }}
-          docker build --platform linux/amd64 -t $IMAGE .
+          docker build -t $IMAGE .
           docker tag $IMAGE ${{ env.ECR_REGISTRY }}/doc-parser/app:latest
           docker push $IMAGE
           docker push ${{ env.ECR_REGISTRY }}/doc-parser/app:latest

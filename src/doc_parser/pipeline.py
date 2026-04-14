@@ -113,7 +113,7 @@ class ParseResult:
                 elements.append(el)
 
             # Per-page markdown assembled from elements (used for chunking metadata)
-            markdown = assemble_markdown(elements)
+            markdown = assemble_markdown(elements)  # type: ignore[arg-type]
             pages.append(PageResult(page_num=page_num, elements=elements, markdown=markdown))
 
         total_elements = sum(len(p.elements) for p in pages)
