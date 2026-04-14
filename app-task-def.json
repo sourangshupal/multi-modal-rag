@@ -1,0 +1,121 @@
+{
+  "family": "doc-parser-app",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "2048",
+  "memory": "16384",
+  "executionRoleArn": "arn:aws:iam::685057748560:role/doc-parser-ecs-task-execution",
+  "taskRoleArn": "arn:aws:iam::685057748560:role/doc-parser-ecs-task-execution",
+  "volumes": [
+    {
+      "name": "qdrant-data",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-037be44eb75b00b25",
+        "transitEncryption": "ENABLED",
+        "authorizationConfig": {
+          "accessPointId": "fsap-07b2e612cdd24beb6",
+          "iam": "ENABLED"
+        }
+      }
+    },
+    {
+      "name": "ollama-models",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-037be44eb75b00b25",
+        "transitEncryption": "ENABLED",
+        "authorizationConfig": {
+          "accessPointId": "fsap-05da93da4e8d55202",
+          "iam": "ENABLED"
+        }
+      }
+    }
+  ],
+  "containerDefinitions": [
+    {
+      "name": "app",
+      "image": "685057748560.dkr.ecr.us-east-1.amazonaws.com/doc-parser/app:latest",
+      "portMappings": [{"containerPort": 8000, "protocol": "tcp"}],
+      "essential": true,
+      "environment": [
+        {"name": "EMBEDDING_PROVIDER",  "value": "openai"},
+        {"name": "RERANKER_BACKEND",    "value": "openai"},
+        {"name": "QDRANT_URL",          "value": "http://localhost:6333"},
+        {"name": "PARSER_BACKEND",      "value": "ollama"},
+        {"name": "OLLAMA_BASE_URL",     "value": "http://localhost:11434"}
+      ],
+      "secrets": [
+        {
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:685057748560:secret:doc-parser/openai-api-key:OPENAI_API_KEY::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/doc-parser-app",
+          "awslogs-region":        "us-east-1",
+          "awslogs-stream-prefix": "app"
+        }
+      },
+      "healthCheck": {
+        "command":     ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval":    30,
+        "timeout":     5,
+        "retries":     3,
+        "startPeriod": 60
+      },
+      "dependsOn": [
+        {"containerName": "qdrant", "condition": "START"},
+        {"containerName": "ollama", "condition": "START"}
+      ]
+    },
+    {
+      "name": "qdrant",
+      "image": "qdrant/qdrant:v1.17.0",
+      "portMappings": [{"containerPort": 6333, "protocol": "tcp"}],
+      "essential": true,
+      "mountPoints": [
+        {
+          "sourceVolume":   "qdrant-data",
+          "containerPath":  "/qdrant/storage",
+          "readOnly":       false
+        }
+      ],
+      "environment": [
+        {"name": "QDRANT__STORAGE__SKIP_FILESYNC_ON_OPEN", "value": "true"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/doc-parser-app",
+          "awslogs-region":        "us-east-1",
+          "awslogs-stream-prefix": "qdrant"
+        }
+      }
+    },
+    {
+      "name": "ollama",
+      "image": "ollama/ollama:latest",
+      "portMappings": [{"containerPort": 11434, "protocol": "tcp"}],
+      "essential": true,
+      "mountPoints": [
+        {
+          "sourceVolume":  "ollama-models",
+          "containerPath": "/root/.ollama",
+          "readOnly":      false
+        }
+      ],
+      "environment": [
+        {"name": "OLLAMA_HOST", "value": "0.0.0.0"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/doc-parser-app",
+          "awslogs-region":        "us-east-1",
+          "awslogs-stream-prefix": "ollama"
+        }
+      }
+    }
+  ]
+}
