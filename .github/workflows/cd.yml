@@ -61,9 +61,29 @@ jobs:
 
       - name: Wait for service stable
         run: |
-          aws ecs wait services-stable \
-            --cluster ${{ secrets.ECS_CLUSTER }} \
-            --services ${{ secrets.ECS_SERVICE_APP }}
+          echo "Polling ECS service stability (max 15 min)..."
+          for i in $(seq 1 60); do
+            RUNNING=$(aws ecs describe-services \
+              --cluster ${{ secrets.ECS_CLUSTER }} \
+              --services ${{ secrets.ECS_SERVICE_APP }} \
+              --query 'services[0].runningCount' --output text)
+            DESIRED=$(aws ecs describe-services \
+              --cluster ${{ secrets.ECS_CLUSTER }} \
+              --services ${{ secrets.ECS_SERVICE_APP }} \
+              --query 'services[0].desiredCount' --output text)
+            PENDING=$(aws ecs describe-services \
+              --cluster ${{ secrets.ECS_CLUSTER }} \
+              --services ${{ secrets.ECS_SERVICE_APP }} \
+              --query 'services[0].pendingCount' --output text)
+            echo "Attempt $i/60 — running=$RUNNING desired=$DESIRED pending=$PENDING"
+            if [ "$RUNNING" = "$DESIRED" ] && [ "$PENDING" = "0" ]; then
+              echo "Service is stable."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Service did not stabilize within 15 minutes."
+          exit 1
 
       - name: Smoke test
         run: |
