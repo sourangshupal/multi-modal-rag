@@ -133,7 +133,7 @@ class BaseEmbedder(ABC):
 class OpenAIEmbedder(BaseEmbedder):
     """Embedder backed by the OpenAI embeddings API."""
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         api_key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
         self._client = AsyncOpenAI(api_key=api_key)
         self._model = settings.embedding_model
@@ -148,7 +148,7 @@ class GeminiEmbedder(BaseEmbedder):
 
     _MODEL = "gemini-embedding-2-preview"
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         if settings.gemini_api_key is None:
             raise ValueError("GEMINI_API_KEY must be set when EMBEDDING_PROVIDER=gemini.")
         try:
@@ -172,7 +172,7 @@ class GeminiEmbedder(BaseEmbedder):
 _PROVIDERS: dict[str, type[BaseEmbedder]] = {"openai": OpenAIEmbedder, "gemini": GeminiEmbedder}
 
 
-def get_embedder(settings: "Settings") -> BaseEmbedder:
+def get_embedder(settings: Settings) -> BaseEmbedder:
     """Return the configured embedder instance.
 
     Args:
@@ -194,9 +194,9 @@ def get_embedder(settings: "Settings") -> BaseEmbedder:
 
 
 async def embed_chunks(
-    chunks: list["Chunk"],
-    embedder: "BaseEmbedder",
-    settings: "Settings",
+    chunks: list[Chunk],
+    embedder: BaseEmbedder,
+    settings: Settings,
 ) -> tuple[list[list[float]], list[SparseVector]]:
     """Embed all chunks with both dense and sparse encodings.
 

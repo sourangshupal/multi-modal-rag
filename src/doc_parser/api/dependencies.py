@@ -5,7 +5,7 @@ from functools import lru_cache
 
 from openai import AsyncOpenAI
 
-from doc_parser.config import Settings, get_settings
+from doc_parser.config import get_settings
 from doc_parser.ingestion.embedder import BaseEmbedder, get_embedder
 from doc_parser.ingestion.vector_store import QdrantDocumentStore
 from doc_parser.retrieval.reranker import BaseReranker, get_reranker

@@ -42,7 +42,7 @@ def _save_chunks_to_disk(
         out_path = _CHUNKS_OUTPUT_DIR / f"{stem}.json"
 
         records = []
-        for chunk, d_emb, s_emb in zip(chunks, dense, sparse):
+        for chunk, d_emb, s_emb in zip(chunks, dense, sparse, strict=False):
             records.append({
                 "chunk_id": chunk.chunk_id,
                 "page": chunk.page,

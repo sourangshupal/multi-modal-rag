@@ -7,8 +7,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from doc_parser.config import get_settings
 from glmocr import GlmOcr  # type: ignore[import]
+
+from doc_parser.config import get_settings
 
 if len(sys.argv) < 2:
     print("Usage: python scripts/debug_raw.py <path-to-pdf>")

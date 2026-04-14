@@ -36,7 +36,7 @@ class QdrantDocumentStore:
     - ``bm25_sparse``: BM25 sparse vectors from fastembed
     """
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         """Initialise the store from application settings.
 
         Args:
@@ -107,7 +107,7 @@ class QdrantDocumentStore:
 
     async def upsert_chunks(
         self,
-        chunks: list["Chunk"],
+        chunks: list[Chunk],
         dense_embeddings: list[list[float]],
         sparse_vectors: list[SparseVector],
         batch_size: int = 64,
@@ -130,7 +130,7 @@ class QdrantDocumentStore:
             )
 
         points: list[PointStruct] = []
-        for chunk, dense, sparse in zip(chunks, dense_embeddings, sparse_vectors):
+        for chunk, dense, sparse in zip(chunks, dense_embeddings, sparse_vectors, strict=False):
             payload = {
                 "text": chunk.text,
                 "chunk_id": chunk.chunk_id,
@@ -167,8 +167,8 @@ class QdrantDocumentStore:
     async def search(
         self,
         query_text: str,
-        embedder: "BaseEmbedder",
-        settings: "Settings",
+        embedder: BaseEmbedder,
+        settings: Settings,
         top_k: int = 10,
         filter_modality: str | None = None,
     ) -> list[dict]:
@@ -191,7 +191,7 @@ class QdrantDocumentStore:
 
         query_filter = None
         if filter_modality is not None:
-            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            from qdrant_client.models import FieldCondition, Filter, MatchValue
 
             query_filter = Filter(
                 must=[FieldCondition(key="modality", match=MatchValue(value=filter_modality))]

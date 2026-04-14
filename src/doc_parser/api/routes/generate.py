@@ -28,7 +28,7 @@ def _build_user_content(
     context: str,
     query: str,
     candidates: list[dict],
-) -> "str | list[dict]":
+) -> str | list[dict]:
     """Build the user message content for GPT-4o.
 
     Returns a plain string when no candidates carry image_base64 (text-only

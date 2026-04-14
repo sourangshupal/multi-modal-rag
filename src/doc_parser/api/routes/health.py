@@ -1,11 +1,11 @@
 """GET /health and GET /collections endpoints."""
 from __future__ import annotations
 
-from loguru import logger
 from fastapi import APIRouter
+from loguru import logger
 from openai import AsyncOpenAI
 
-from doc_parser.api.dependencies import get_openai_client, get_reranker_dep, get_store
+from doc_parser.api.dependencies import get_openai_client, get_store
 from doc_parser.api.schemas import CollectionsResponse, DeleteCollectionResponse, HealthResponse
 from doc_parser.config import get_settings
 
