@@ -23,18 +23,21 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
-        run: |
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
-            docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registries: "685057748560"
 
       - name: Build and push app image
         id: build-app
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          IMAGE=${{ env.ECR_REGISTRY }}/doc-parser/app:${{ github.sha }}
+          IMAGE=$REGISTRY/doc-parser/app:${{ github.sha }}
           docker build -t $IMAGE .
-          docker tag $IMAGE ${{ env.ECR_REGISTRY }}/doc-parser/app:latest
+          docker tag $IMAGE $REGISTRY/doc-parser/app:latest
           docker push $IMAGE
-          docker push ${{ env.ECR_REGISTRY }}/doc-parser/app:latest
+          docker push $REGISTRY/doc-parser/app:latest
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
   deploy:
