@@ -241,6 +241,10 @@ aws ecr describe-repositories \
 ## 6. ECS Cluster
 
 ```bash
+
+aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com
+
+
 aws ecs create-cluster \
   --cluster-name $CLUSTER_NAME \
   --capacity-providers FARGATE FARGATE_SPOT \
