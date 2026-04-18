@@ -48,3 +48,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+print("API app created successfully.")
