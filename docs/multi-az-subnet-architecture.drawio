@@ -1,0 +1,405 @@
+<mxfile host="Electron" version="29.6.1">
+  <diagram name="Page-1" id="multi-az-subnets">
+    <mxGraphModel dx="1200" dy="800" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="2200" pageHeight="1460" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- TITLE BLOCK -->
+        <mxCell id="title-text" value="Multi-Modal RAG Pipeline — Multi-AZ Subnet Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=30;fontStyle=1;fontFamily=Helvetica;fontColor=light-dark(#1A1A1A,#F0F0F0);" vertex="1" parent="1">
+          <mxGeometry x="30" y="18" width="2140" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle-text" value="AWS ECS Fargate (us-east-1) — showing why 2 public subnets + 2 private subnets are required" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=16;fontFamily=Helvetica;fontColor=light-dark(#4A4A4A,#CCCCCC);" vertex="1" parent="1">
+          <mxGeometry x="30" y="58" width="2140" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="title-sep" value="" style="line;strokeColor=#FF9900;strokeWidth=2;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="30" y="88" width="2140" height="6" as="geometry"/>
+        </mxCell>
+
+        <!-- INTERNET USER (far left) -->
+        <mxCell id="c-user" value="Users" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=light-dark(#F5F5F5,#2A2A2A);strokeColor=light-dark(#666666,#888888);fontFamily=Helvetica;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;labelBackgroundColor=none;container=1;collapsible=0;expand=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="425" width="120" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="i-user" value="&lt;b&gt;Internet&lt;/b&gt;&lt;br/&gt;&lt;i&gt;HTTP :80&lt;/i&gt;" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#232F3E;labelBackgroundColor=none;align=center;html=1;fontSize=9;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.internet_alt2;" vertex="1" parent="c-user">
+          <mxGeometry x="36" y="26" width="48" height="48" as="geometry"/>
+        </mxCell>
+
+        <!-- GITHUB ACTIONS (top right, outside AWS) -->
+        <mxCell id="github-box" value="GitHub Actions (CI/CD)" style="rounded=1;html=1;fillColor=light-dark(#24292e,#1a1e23);strokeColor=light-dark(#586069,#6e7681);fontColor=#ffffff;fontStyle=1;fontSize=13;fontFamily=Helvetica;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1820" y="100" width="350" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="github-ci-box" value="CI  (ci.yml)&#xa;ruff  mypy  pytest" style="rounded=1;html=1;fillColor=#3e4a59;strokeColor=#6e7681;fontColor=#cdd9e5;fontSize=10;fontFamily=Helvetica;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1836" y="132" width="148" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="github-cd" value="CD  (cd.yml)&#xa;build &gt; ECR push&#xa;ECS deploy &gt; smoke test" style="rounded=1;html=1;fillColor=#3e4a59;strokeColor=#6e7681;fontColor=#cdd9e5;fontSize=10;fontFamily=Helvetica;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1996" y="128" width="164" height="66" as="geometry"/>
+        </mxCell>
+
+        <!-- OPENAI (right, outside AWS) -->
+        <mxCell id="openai-box" value="OpenAI (api.openai.com)" style="rounded=1;html=1;fillColor=light-dark(#EBF3FF,#1A2540);strokeColor=#4B6FE4;fontColor=light-dark(#1A1A1A,#F0F0F0);fontStyle=1;fontSize=12;fontFamily=Helvetica;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1820" y="420" width="350" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="openai-detail" value="text-embedding-3-large  (embed)&#xa;gpt-4o  (caption + generate)&#xa;gpt-4o-mini  (reranking)" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;fontFamily=Helvetica;spacingLeft=8;fontColor=light-dark(#1A1A1A,#F0F0F0);" vertex="1" parent="1">
+          <mxGeometry x="1828" y="448" width="334" height="140" as="geometry"/>
+        </mxCell>
+
+        <!-- AWS CLOUD BOUNDARY -->
+        <mxCell id="aws-cloud" value="AWS Cloud (us-east-1)" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_aws_cloud_alt;strokeColor=light-dark(#232F3E,#AABBCC);fillColor=light-dark(#232F3E0D,#232F3E0D);fillStyle=auto;verticalAlign=top;align=center;spacingTop=28;fontStyle=1;fontSize=14;fontFamily=Helvetica;fontColor=light-dark(#232F3E,#AABBCC);container=1;pointerEvents=0;collapsible=0;expand=0;" vertex="1" parent="1">
+          <mxGeometry x="160" y="100" width="1630" height="1320" as="geometry"/>
+        </mxCell>
+
+        <!-- VPC -->
+        <mxCell id="vpc" value="VPC: doc-parser-vpc (10.0.0.0/16)" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc;strokeColor=#8C4FFF;fillColor=light-dark(#8C4FFF0D,#8C4FFF1A);fillStyle=auto;verticalAlign=top;align=center;spacingTop=28;fontStyle=1;fontSize=13;fontFamily=Helvetica;fontColor=#8C4FFF;container=1;pointerEvents=0;collapsible=0;expand=0;" vertex="1" parent="1">
+          <mxGeometry x="188" y="150" width="1250" height="1240" as="geometry"/>
+        </mxCell>
+
+        <!-- AZ-A -->
+        <mxCell id="az-a" value="Availability Zone: us-east-1a" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_availability_zone;strokeColor=#00A4A6;fillColor=light-dark(#00A4A60D,#00A4A61A);fillStyle=auto;verticalAlign=top;align=center;spacingTop=28;fontStyle=1;fontSize=12;fontFamily=Helvetica;fontColor=#00A4A6;container=1;pointerEvents=0;collapsible=0;expand=0;" vertex="1" parent="1">
+          <mxGeometry x="208" y="200" width="570" height="1170" as="geometry"/>
+        </mxCell>
+
+        <!-- Public Subnet A -->
+        <mxCell id="pub-a" value="Public Subnet A (10.0.1.0/24)" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_public_subnet;strokeColor=#248814;fillColor=light-dark(#2488140D,#2488141A);fillStyle=auto;verticalAlign=top;align=center;spacingTop=28;fontStyle=0;fontSize=11;fontFamily=Helvetica;fontColor=#248814;container=1;pointerEvents=0;collapsible=0;expand=0;" vertex="1" parent="1">
+          <mxGeometry x="228" y="258" width="530" height="210" as="geometry"/>
+        </mxCell>
+
+        <!-- ALB in Public Subnet A -->
+        <mxCell id="c-alb" value="Load Balancing" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=light-dark(#EBE0FF,#2D1F5E);strokeColor=#8C4FFF;fontFamily=Helvetica;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;labelBackgroundColor=none;container=1;collapsible=0;expand=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="353" y="290" width="120" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="i-alb" value="&lt;b&gt;ALB&lt;/b&gt;&lt;br/&gt;&lt;i&gt;doc-parser-alb&lt;/i&gt;&lt;br/&gt;&lt;i&gt;spans both AZs&lt;/i&gt;" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#8C4FFF;labelBackgroundColor=none;align=center;html=1;fontSize=9;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_load_balancing;" vertex="1" parent="c-alb">
+          <mxGeometry x="36" y="26" width="48" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="sg-alb-lbl" value="SG: alb-sg | Inbound: 0.0.0.0/0 :80" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontFamily=Helvetica;fontColor=light-dark(#248814,#80D060);" vertex="1" parent="1">
+          <mxGeometry x="228" y="426" width="530" height="18" as="geometry"/>
+        </mxCell>
+
+        <!-- Private Subnet A -->
+        <mxCell id="priv-a" value="Private Subnet A (10.0.2.0/24)" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_private_subnet;strokeColor=#147EBA;fillColor=light-dark(#147EBA0D,#147EBA1A);fillStyle=auto;verticalAlign=top;align=center;spacingTop=28;fontStyle=0;fontSize=11;fontFamily=Helvetica;fontColor=#147EBA;container=1;pointerEvents=0;collapsible=0;expand=0;" vertex="1" parent="1">
+          <mxGeometry x="228" y="508" width="530" height="840" as="geometry"/>
+        </mxCell>
+
+        <!-- Fargate task decoration (dashed boundary, not a real container) -->
+        <mxCell id="ft-deco" value="Fargate Task: doc-parser-app (2 vCPU / 16 GB)" style="rounded=1;dashed=1;html=1;fillColor=light-dark(#FDEEF9,#2A0F1E);strokeColor=#E7157B;fontFamily=Helvetica;fontSize=10;fontStyle=1;verticalAlign=top;spacingTop=6;labelBackgroundColor=none;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="248" y="556" width="490" height="680" as="geometry"/>
+        </mxCell>
+
+        <!-- Container: app (Fargate) -->
+        <mxCell id="c-app" value="Compute" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=light-dark(#F9E0EF,#4A1F35);strokeColor=#E7157B;fontFamily=Helvetica;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;labelBackgroundColor=none;container=1;collapsible=0;expand=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="268" y="594" width="120" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="i-app" value="&lt;b&gt;App Container&lt;/b&gt;&lt;br/&gt;&lt;i&gt;FastAPI :8000&lt;/i&gt;&lt;br/&gt;&lt;i&gt;8 GB&lt;/i&gt;" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#E7157B;labelBackgroundColor=none;align=center;html=1;fontSize=9;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.fargate;" vertex="1" parent="c-app">
+          <mxGeometry x="36" y="26" width="48" height="48" as="geometry"/>
+        </mxCell>
+
+        <!-- Container: qdrant -->
+        <mxCell id="c-qdrant" value="Database" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=light-dark(#E7F7E5,#1A3D18);strokeColor=#3F8624;fontFamily=Helvetica;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;labelBackgroundColor=none;container=1;collapsible=0;expand=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="408" y="594" width="120" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="i-qdrant" value="&lt;b&gt;Qdrant&lt;/b&gt;&lt;br/&gt;&lt;i&gt;v1.13.3 :6333&lt;/i&gt;&lt;br/&gt;&lt;i&gt;1 GB&lt;/i&gt;" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#3F8624;labelBackgroundColor=none;align=center;html=1;fontSize=9;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ecs;" vertex="1" parent="c-qdrant">
+          <mxGeometry x="36" y="26" width="48" height="48" as="geometry"/>
+        </mxCell>
+
+        <!-- Container: ollama -->
+        <mxCell id="c-ollama" value="Compute" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=light-dark(#FFF3E0,#3D2000);strokeColor=#d79b00;fontFamily=Helvetica;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;labelBackgroundColor=none;container=1;collapsible=0;expand=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="548" y="594" width="120" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="i-ollama" value="&lt;b&gt;Ollama&lt;/b&gt;&lt;br/&gt;&lt;i&gt;GLM-OCR :11434&lt;/i&gt;&lt;br/&gt;&lt;i&gt;6 GB&lt;/i&gt;" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#d79b00;labelBackgroundColor=none;align=center;html=1;fontSize=9;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.fargate;" vertex="1" parent="c-ollama">
+          <mxGeometry x="36" y="26" width="48" height="48" as="geometry"/>
+        </mxCell>
+
+        <!-- Info boxes inside Fargate task -->
+        <mxCell id="app-info" value="Routes:&#xa;POST /ingest/file&#xa;POST /generate&#xa;GET /search / /health" style="rounded=1;html=1;fillColor=light-dark(#EAF4FB,#0D2030);strokeColor=#0073BB;fontSize=10;fontFamily=Helvetica;align=left;spacingLeft=6;fontColor=light-dark(#1A1A1A,#E0F0FF);" vertex="1" parent="1">
+          <mxGeometry x="268" y="734" width="190" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="qdrant-info" value="Hybrid Search:&#xa;Dense: text_dense (3072d)&#xa;Sparse: bm25_sparse&#xa;Fusion: RRF" style="rounded=1;html=1;fillColor=light-dark(#EBF5EE,#0D2010);strokeColor=#3F8624;fontSize=10;fontFamily=Helvetica;align=left;spacingLeft=6;fontColor=light-dark(#1A1A1A,#C0F0C0);" vertex="1" parent="1">
+          <mxGeometry x="358" y="734" width="190" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="ollama-info" value="Model: glm4v-9b&#xa;~5-6 GB weights&#xa;Loaded from EFS&#xa;PDF OCR parsing" style="rounded=1;html=1;fillColor=light-dark(#FFF3E0,#3D2000);strokeColor=#d79b00;fontSize=10;fontFamily=Helvetica;align=left;spacingLeft=6;fontColor=light-dark(#1A1A1A,#F0D080);" vertex="1" parent="1">
+          <mxGeometry x="548" y="734" width="170" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="sg-ecs-lbl" value="SG: ecs-sg | Inbound: alb-sg :8000 | Inter-container: localhost (no SG needed)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontFamily=Helvetica;fontColor=light-dark(#147EBA,#80C8F0);" vertex="1" parent="1">
+          <mxGeometry x="248" y="822" width="490" height="18" as="geometry"/>
+        </mxCell>
+
+        <!-- EFS Qdrant (inside Private Subnet A) -->
+        <mxCell id="c-efs-q" value="Storage" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=light-dark(#E7F7E5,#1A3D18);strokeColor=#3F8624;fontFamily=Helvetica;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;labelBackgroundColor=none;container=1;collapsible=0;expand=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="268" y="864" width="120" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="i-efs-q" value="&lt;b&gt;EFS&lt;/b&gt;&lt;br/&gt;&lt;i&gt;qdrant-data&lt;/i&gt;&lt;br/&gt;&lt;i&gt;/qdrant/storage&lt;/i&gt;" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#3F8624;labelBackgroundColor=none;align=center;html=1;fontSize=9;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_file_system;" vertex="1" parent="c-efs-q">
+          <mxGeometry x="36" y="26" width="48" height="48" as="geometry"/>
+        </mxCell>
+
+        <!-- EFS Ollama (inside Private Subnet A) -->
+        <mxCell id="c-efs-o" value="Storage" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=light-dark(#E7F7E5,#1A3D18);strokeColor=#3F8624;fontFamily=Helvetica;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;labelBackgroundColor=none;container=1;collapsible=0;expand=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="548" y="864" width="120" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="i-efs-o" value="&lt;b&gt;EFS&lt;/b&gt;&lt;br/&gt;&lt;i&gt;ollama-data&lt;/i&gt;&lt;br/&gt;&lt;i&gt;/root/.ollama&lt;/i&gt;" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#3F8624;labelBackgroundColor=none;align=center;html=1;fontSize=9;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_file_system;" vertex="1" parent="c-efs-o">
+          <mxGeometry x="36" y="26" width="48" height="48" as="geometry"/>
+        </mxCell>
+
+        <!-- EFS multi-AZ note -->
+        <mxCell id="efs-note" value="Both EFS volumes are multi-AZ by default — accessible from us-east-1a and us-east-1b without any extra configuration." style="rounded=1;html=1;fillColor=light-dark(#E7F7E5,#1A3D18);strokeColor=#3F8624;fontSize=10;fontFamily=Helvetica;fontColor=light-dark(#1A4A10,#80D060);align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="268" y="1010" width="450" height="46" as="geometry"/>
+        </mxCell>
+
+        <!-- AZ-B -->
+        <mxCell id="az-b" value="Availability Zone: us-east-1b" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_availability_zone;strokeColor=#00A4A6;fillColor=light-dark(#00A4A60D,#00A4A61A);fillStyle=auto;verticalAlign=top;align=center;spacingTop=28;fontStyle=1;fontSize=12;fontFamily=Helvetica;fontColor=#00A4A6;container=1;pointerEvents=0;collapsible=0;expand=0;" vertex="1" parent="1">
+          <mxGeometry x="808" y="200" width="600" height="1170" as="geometry"/>
+        </mxCell>
+
+        <!-- Public Subnet B -->
+        <mxCell id="pub-b" value="Public Subnet B (10.0.3.0/24)" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_public_subnet;strokeColor=#248814;fillColor=light-dark(#2488140D,#2488141A);fillStyle=auto;verticalAlign=top;align=center;spacingTop=28;fontStyle=0;fontSize=11;fontFamily=Helvetica;fontColor=#248814;container=1;pointerEvents=0;collapsible=0;expand=0;" vertex="1" parent="1">
+          <mxGeometry x="828" y="258" width="560" height="210" as="geometry"/>
+        </mxCell>
+
+        <!-- ALB note in Public Subnet B -->
+        <mxCell id="alb-b-note" value="ALB node in us-east-1b&#xa;&#xa;The ALB (doc-parser-alb) automatically&#xa;provisions a node in this subnet too.&#xa;&#xa;AWS REQUIRES at least 2 subnets&#xa;in different AZs to create an ALB.&#xa;&#xa;If us-east-1a becomes unavailable,&#xa;all traffic routes via this subnet." style="rounded=1;dashed=1;html=1;fillColor=light-dark(#EBE0FF,#2D1F5E);strokeColor=#8C4FFF;fontFamily=Helvetica;fontSize=11;fontColor=light-dark(#4A3080,#C0A0FF);align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="898" y="280" width="420" height="160" as="geometry"/>
+        </mxCell>
+
+        <!-- Private Subnet B -->
+        <mxCell id="priv-b" value="Private Subnet B (10.0.4.0/24)" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_private_subnet;strokeColor=#147EBA;fillColor=light-dark(#147EBA0D,#147EBA1A);fillStyle=auto;verticalAlign=top;align=center;spacingTop=28;fontStyle=0;fontSize=11;fontFamily=Helvetica;fontColor=#147EBA;container=1;pointerEvents=0;collapsible=0;expand=0;" vertex="1" parent="1">
+          <mxGeometry x="828" y="508" width="560" height="840" as="geometry"/>
+        </mxCell>
+
+        <!-- ECS standby note in Private Subnet B -->
+        <mxCell id="ecs-b-note" value="ECS Fargate Standby — us-east-1b&#xa;&#xa;desiredCount=1: only 1 task runs at a time.&#xa;The task currently runs in us-east-1a.&#xa;&#xa;This private subnet is registered with&#xa;the ECS service so it can restart the task&#xa;here if us-east-1a becomes unhealthy.&#xa;&#xa;Scale-out (desiredCount &gt; 1) would&#xa;place additional tasks in this subnet,&#xa;distributing load across both AZs." style="rounded=1;dashed=1;html=1;fillColor=light-dark(#E8F4FB,#0D1E30);strokeColor=#147EBA;fontFamily=Helvetica;fontSize=11;fontColor=light-dark(#0A4A6A,#80C8F0);align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="878" y="548" width="450" height="260" as="geometry"/>
+        </mxCell>
+
+        <!-- EFS shared note in Private Subnet B -->
+        <mxCell id="efs-shared-note" value="EFS is accessible here too&#xa;(multi-AZ, no duplication needed)" style="rounded=1;html=1;fillColor=light-dark(#E7F7E5,#1A3D18);strokeColor=#3F8624;fontFamily=Helvetica;fontSize=11;fontColor=light-dark(#1A4A10,#80D060);align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="878" y="870" width="380" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- AWS MANAGED SERVICES (outside VPC, inside AWS Cloud) -->
+        <mxCell id="aws-svc-bg" value="AWS Managed Services" style="rounded=1;html=1;fillColor=light-dark(#F5F5F5,#2A2A2A);strokeColor=light-dark(#AAAAAA,#666666);fontFamily=Helvetica;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="165" width="300" height="640" as="geometry"/>
+        </mxCell>
+
+        <!-- ECR -->
+        <mxCell id="c-ecr" value="Container Registry" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=light-dark(#F9E0EF,#4A1F35);strokeColor=#E7157B;fontFamily=Helvetica;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;labelBackgroundColor=none;container=1;collapsible=0;expand=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="1472" y="196" width="120" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="i-ecr" value="&lt;b&gt;ECR&lt;/b&gt;&lt;br/&gt;&lt;i&gt;doc-parser/app&lt;/i&gt;" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#E7157B;labelBackgroundColor=none;align=center;html=1;fontSize=9;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ecr;" vertex="1" parent="c-ecr">
+          <mxGeometry x="36" y="26" width="48" height="48" as="geometry"/>
+        </mxCell>
+
+        <!-- Secrets Manager -->
+        <mxCell id="c-sm" value="Security" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=light-dark(#FAE0E4,#4A1A20);strokeColor=#DD344C;fontFamily=Helvetica;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;labelBackgroundColor=none;container=1;collapsible=0;expand=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="1622" y="196" width="120" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="i-sm" value="&lt;b&gt;Secrets Manager&lt;/b&gt;&lt;br/&gt;&lt;i&gt;openai-api-key&lt;/i&gt;" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#DD344C;labelBackgroundColor=none;align=center;html=1;fontSize=9;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;" vertex="1" parent="c-sm">
+          <mxGeometry x="36" y="26" width="48" height="48" as="geometry"/>
+        </mxCell>
+
+        <!-- CloudWatch -->
+        <mxCell id="c-cw" value="Management" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=light-dark(#F9E0EF,#4A1F35);strokeColor=#E7157B;fontFamily=Helvetica;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;labelBackgroundColor=none;container=1;collapsible=0;expand=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="1472" y="356" width="120" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="i-cw" value="&lt;b&gt;CloudWatch Logs&lt;/b&gt;&lt;br/&gt;&lt;i&gt;/ecs/doc-parser-app&lt;/i&gt;" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#E7157B;labelBackgroundColor=none;align=center;html=1;fontSize=9;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch_2;" vertex="1" parent="c-cw">
+          <mxGeometry x="36" y="26" width="48" height="48" as="geometry"/>
+        </mxCell>
+
+        <!-- IAM -->
+        <mxCell id="c-iam" value="Security" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=light-dark(#FAE0E4,#4A1A20);strokeColor=#DD344C;fontFamily=Helvetica;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;labelBackgroundColor=none;container=1;collapsible=0;expand=0;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="1622" y="356" width="120" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="i-iam" value="&lt;b&gt;IAM Role&lt;/b&gt;&lt;br/&gt;&lt;i&gt;ecsTaskExecutionRole&lt;/i&gt;" style="outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;fillColor=#DD344C;labelBackgroundColor=none;align=center;html=1;fontSize=9;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management;" vertex="1" parent="c-iam">
+          <mxGeometry x="36" y="26" width="48" height="48" as="geometry"/>
+        </mxCell>
+
+        <!-- STEP BADGES (teal #007CBD 28x28) -->
+        <mxCell id="b1" value="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=11;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="130" y="450" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="b2" value="2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=11;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="380" y="472" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="b3a" value="3a" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=9;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="350" y="618" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="b3b" value="3b" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=9;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="490" y="618" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="b4a" value="4a" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=9;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="270" y="848" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="b4b" value="4b" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=9;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="550" y="848" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="b5" value="5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=11;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="270" y="574" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="b6" value="6" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=11;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1590" y="186" width="28" height="28" as="geometry"/>
+        </mxCell>
+
+        <!-- LEGEND PANEL -->
+        <mxCell id="legend-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#F5F7F8,#1E2830);strokeColor=light-dark(#C8D0D8,#3A4A58);fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="840" width="390" height="560" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-title" value="Request Flow" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=14;fontStyle=1;fontFamily=Helvetica;fontColor=light-dark(#1A1A1A,#F0F0F0);" vertex="1" parent="1">
+          <mxGeometry x="1476" y="852" width="200" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-sep" value="" style="line;strokeColor=light-dark(#C8D0D8,#3A4A58);strokeWidth=1;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1476" y="878" width="358" height="6" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="lb1" value="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=11;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1476" y="890" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="lt1" value="User HTTP :80 → ALB (routes via nearest healthy AZ)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;fontColor=light-dark(#1A1A1A,#F0F0F0);" vertex="1" parent="1">
+          <mxGeometry x="1514" y="890" width="326" height="28" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="lb2" value="2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=11;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1476" y="932" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="lt2" value="ALB forwards to Fargate task :8000 in Private Subnet A" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;fontColor=light-dark(#1A1A1A,#F0F0F0);" vertex="1" parent="1">
+          <mxGeometry x="1514" y="932" width="326" height="28" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="lb3a" value="3a" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=9;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1476" y="974" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="lt3a" value="App → Qdrant hybrid search (localhost:6333)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;fontColor=light-dark(#1A1A1A,#F0F0F0);" vertex="1" parent="1">
+          <mxGeometry x="1514" y="974" width="326" height="28" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="lb3b" value="3b" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=9;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1476" y="1016" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="lt3b" value="App → Ollama GLM-OCR (localhost:11434)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;fontColor=light-dark(#1A1A1A,#F0F0F0);" vertex="1" parent="1">
+          <mxGeometry x="1514" y="1016" width="326" height="28" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="lb4a" value="4a" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=9;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1476" y="1058" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="lt4a" value="Qdrant reads/writes EFS (vector index persists)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;fontColor=light-dark(#1A1A1A,#F0F0F0);" vertex="1" parent="1">
+          <mxGeometry x="1514" y="1058" width="326" height="28" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="lb4b" value="4b" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=9;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1476" y="1100" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="lt4b" value="Ollama loads model weights from EFS at startup" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;fontColor=light-dark(#1A1A1A,#F0F0F0);" vertex="1" parent="1">
+          <mxGeometry x="1514" y="1100" width="326" height="28" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="lb5" value="5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=11;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1476" y="1142" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="lt5" value="App calls OpenAI HTTPS (embed / caption / generate)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;fontColor=light-dark(#1A1A1A,#F0F0F0);" vertex="1" parent="1">
+          <mxGeometry x="1514" y="1142" width="326" height="28" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="lb6" value="6" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#007CBD;strokeColor=#007CBD;fontColor=#FFFFFF;fontSize=11;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1476" y="1184" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="lt6" value="CD: GitHub → docker push ECR → ECS deploy" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontFamily=Helvetica;fontColor=light-dark(#1A1A1A,#F0F0F0);" vertex="1" parent="1">
+          <mxGeometry x="1514" y="1184" width="326" height="28" as="geometry"/>
+        </mxCell>
+
+        <!-- WHY 2 SUBNETS CALLOUT BOX -->
+        <mxCell id="why-bg" value="Why 2 Public + 2 Private Subnets?" style="rounded=1;html=1;fillColor=light-dark(#FFF9E6,#3D3000);strokeColor=#FF9900;fontFamily=Helvetica;fontSize=13;fontStyle=1;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="1430" width="700" height="0" as="geometry"/>
+        </mxCell>
+
+        <!-- EDGES -->
+
+        <!-- 1: Internet → ALB -->
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#FF9900;strokeWidth=2.5;fontFamily=Helvetica;" edge="1" source="c-user" target="c-alb" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- 2: ALB → App -->
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#FF9900;strokeWidth=2.5;fontFamily=Helvetica;" edge="1" source="c-alb" target="c-app" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- 3a: App → Qdrant -->
+        <mxCell id="e3a" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;strokeColor=#3F8624;strokeWidth=2;fontFamily=Helvetica;" edge="1" source="c-app" target="c-qdrant" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- 3b: App → Ollama (routes below containers to avoid crossing Qdrant) -->
+        <mxCell id="e3b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.7;entryDx=0;entryDy=0;strokeColor=#d79b00;strokeWidth=2;fontFamily=Helvetica;" edge="1" source="c-app" target="c-ollama" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="400" y="678"/>
+              <mxPoint x="400" y="820"/>
+              <mxPoint x="544" y="820"/>
+              <mxPoint x="544" y="678"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 4a: Qdrant → EFS-Q -->
+        <mxCell id="e4a" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#3F8624;strokeWidth=2;fontFamily=Helvetica;" edge="1" source="c-qdrant" target="c-efs-q" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- 4b: Ollama → EFS-O -->
+        <mxCell id="e4b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#3F8624;strokeWidth=2;fontFamily=Helvetica;" edge="1" source="c-ollama" target="c-efs-o" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- 5: App → OpenAI (exits top, routes above VPC) -->
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#4B6FE4;strokeWidth=2;fontFamily=Helvetica;dashed=0;" edge="1" source="c-app" target="openai-box" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="550" y="510"/>
+              <mxPoint x="1960" y="510"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 6: CD → ECR (docker push) -->
+        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#0073BB;strokeWidth=2;dashed=1;fontFamily=Helvetica;" edge="1" source="github-cd" target="c-ecr" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ECR → App (image pull at task start) -->
+        <mxCell id="e-ecr-app" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;strokeColor=#0073BB;strokeWidth=2;dashed=1;fontFamily=Helvetica;" edge="1" source="c-ecr" target="c-app" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1452" y="380"/>
+              <mxPoint x="452" y="380"/>
+              <mxPoint x="452" y="594"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- SM → App (env inject) -->
+        <mxCell id="e-sm-app" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0;entryDx=0;entryDy=0;strokeColor=#DD344C;strokeWidth=1.5;dashed=1;fontFamily=Helvetica;" edge="1" source="c-sm" target="c-app" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1602" y="440"/>
+              <mxPoint x="1440" y="440"/>
+              <mxPoint x="1440" y="540"/>
+              <mxPoint x="540" y="540"/>
+              <mxPoint x="540" y="594"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- App → CloudWatch (logs) -->
+        <mxCell id="e-cw" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=1;entryDx=0;entryDy=0;strokeColor=#E7157B;strokeWidth=1.5;dashed=1;fontFamily=Helvetica;" edge="1" source="c-app" target="c-cw" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="268" y="480"/>
+              <mxPoint x="200" y="480"/>
+              <mxPoint x="200" y="476"/>
+              <mxPoint x="1452" y="476"/>
+              <mxPoint x="1452" y="476"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
