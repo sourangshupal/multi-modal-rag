@@ -56,3 +56,10 @@ def setup_logging(level: str = "INFO", json_logs: bool = False) -> None:
         log = logging.getLogger(name)
         log.handlers = [_InterceptHandler()]
         log.propagate = False
+
+
+
+
+
+
+print("Logging configured with loguru.")

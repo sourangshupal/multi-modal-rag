@@ -10,10 +10,10 @@
     {
       "name": "qdrant-data",
       "efsVolumeConfiguration": {
-        "fileSystemId": "fs-037be44eb75b00b25",
+        "fileSystemId": "fs-06e2aa7871d4e4e5d",
         "transitEncryption": "ENABLED",
         "authorizationConfig": {
-          "accessPointId": "fsap-07b2e612cdd24beb6",
+          "accessPointId": "fsap-09b64b579120045d8",
           "iam": "ENABLED"
         }
       }
@@ -21,10 +21,10 @@
     {
       "name": "ollama-models",
       "efsVolumeConfiguration": {
-        "fileSystemId": "fs-037be44eb75b00b25",
+        "fileSystemId": "fs-06e2aa7871d4e4e5d",
         "transitEncryption": "ENABLED",
         "authorizationConfig": {
-          "accessPointId": "fsap-05da93da4e8d55202",
+          "accessPointId": "fsap-0cf29c08c2b878fee",
           "iam": "ENABLED"
         }
       }
