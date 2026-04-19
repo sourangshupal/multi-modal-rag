@@ -26,12 +26,13 @@ completely fresh account. Follow the phases in order — each phase depends on t
 15. [Ollama Model Bootstrap](#15-ollama-model-bootstrap)
 16. [GitHub Actions Secrets](#16-github-actions-secrets)
 17. [Verify Deployment](#17-verify-deployment)
-18. [CI/CD Flow Reference](#18-cicd-flow-reference)
-19. [Rollback Procedure](#19-rollback-procedure)
-20. [Cost Overview](#20-cost-overview--what-this-infrastructure-charges-per-month)
-21. [How to Stop the Infrastructure (Save Money)](#21-how-to-stop-the-infrastructure-save-money-keep-data)
-22. [How to Restart the Infrastructure](#22-how-to-restart-the-infrastructure)
-23. [How to Tear Down Everything (Full Deletion)](#23-how-to-tear-down-everything-full-deletion)
+18. [Troubleshooting Common Deployment Issues](#18-troubleshooting-common-deployment-issues)
+19. [CI/CD Flow Reference](#19-cicd-flow-reference)
+20. [Rollback Procedure](#20-rollback-procedure)
+21. [Cost Overview](#21-cost-overview--what-this-infrastructure-charges-per-month)
+22. [How to Stop the Infrastructure (Save Money)](#22-how-to-stop-the-infrastructure-save-money-keep-data)
+23. [How to Restart the Infrastructure](#23-how-to-restart-the-infrastructure)
+24. [How to Tear Down Everything (Full Deletion)](#24-how-to-tear-down-everything-full-deletion)
 
 ---
 
@@ -211,6 +212,16 @@ aws ec2 authorize-security-group-ingress \
   --group-id $ECS_SG \
   --protocol tcp --port 2049 --source-group $ECS_SG
 ```
+
+```bash
+# ✅ Verify both rules were applied — you should see port 8000 and port 2049
+aws ec2 describe-security-groups \
+  --group-ids $ECS_SG \
+  --query 'SecurityGroups[0].IpPermissions[*].{port:FromPort,source:UserIdGroupPairs[0].GroupId}' \
+  --output table
+```
+
+> Expected: one row for port `8000` (source = ALB SG id) and one row for port `2049` (source = ECS SG id). If port 8000 is missing, the ALB will never reach your containers and health checks will time out with `Target.Timeout`.
 
 > **Save these values** — you will need them in later phases.
 
@@ -487,6 +498,21 @@ export EXECUTION_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/doc-parser-ecs-ta
 echo "Execution Role ARN: $EXECUTION_ROLE_ARN"
 ```
 
+```bash
+# ✅ Verify all policies are attached
+aws iam list-attached-role-policies \
+  --role-name doc-parser-ecs-task-execution \
+  --query 'AttachedPolicies[*].PolicyName' --output table
+# Expected: AmazonECSTaskExecutionRolePolicy
+
+aws iam list-role-policies \
+  --role-name doc-parser-ecs-task-execution \
+  --query 'PolicyNames' --output table
+# Expected: secrets-manager-read, efs-mount, ecs-exec
+```
+
+> If `secrets-manager-read` is missing, ECS tasks will fail at startup with `TaskFailedToStart: AccessDeniedException` on Secrets Manager before any container even launches. Re-run the `put-role-policy` command above and ECS will retry automatically.
+
 ---
 
 ## 11. CloudWatch Log Groups
@@ -508,11 +534,12 @@ This task runs three containers:
 - **qdrant** — vector database sidecar (port 6333, EFS-backed)
 - **ollama** — local LLM / OCR engine (port 11434, EFS-backed, `essential: true`)
 
-> **Key differences from the base runbook:**
-> - `PARSER_BACKEND=ollama` (not `cloud`)
-> - No `Z_AI_API_KEY` secret
-> - `ollama` container is `essential: true` — if Ollama dies, the task restarts
-> - `assignPublicIp=ENABLED` (default VPC uses public subnets, no NAT gateway)
+> **Key configuration notes:**
+> - `memory: 16384` (16 GB) — required to run Ollama + Qdrant + app concurrently
+> - `PARSER_BACKEND=ollama` — uses local Ollama for PDF parsing, no Z.AI key needed
+> - `QDRANT__STORAGE__SKIP_FILESYNC_ON_OPEN=true` — suppresses Qdrant's NFS warning on EFS (harmless, see Section 18C)
+> - `app` depends on qdrant and ollama with condition `START` (not `HEALTHY`) — app starts as soon as both containers launch
+> - Qdrant image pinned to `v1.17.0` for API compatibility
 
 ```bash
 cat > /tmp/app-task-def.json << EOF
@@ -521,7 +548,7 @@ cat > /tmp/app-task-def.json << EOF
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "2048",
-  "memory": "8192",
+  "memory": "16384",
   "executionRoleArn": "${EXECUTION_ROLE_ARN}",
   "taskRoleArn": "${EXECUTION_ROLE_ARN}",
   "volumes": [
@@ -583,13 +610,13 @@ cat > /tmp/app-task-def.json << EOF
         "startPeriod": 60
       },
       "dependsOn": [
-        {"containerName": "qdrant", "condition": "HEALTHY"},
+        {"containerName": "qdrant", "condition": "START"},
         {"containerName": "ollama", "condition": "START"}
       ]
     },
     {
       "name": "qdrant",
-      "image": "qdrant/qdrant:v1.13.3",
+      "image": "qdrant/qdrant:v1.17.0",
       "portMappings": [{"containerPort": 6333, "protocol": "tcp"}],
       "essential": true,
       "mountPoints": [
@@ -599,13 +626,9 @@ cat > /tmp/app-task-def.json << EOF
           "readOnly":       false
         }
       ],
-      "healthCheck": {
-        "command":     ["CMD-SHELL", "curl -f http://localhost:6333/healthz || exit 1"],
-        "interval":    15,
-        "timeout":     5,
-        "retries":     3,
-        "startPeriod": 30
-      },
+      "environment": [
+        {"name": "QDRANT__STORAGE__SKIP_FILESYNC_ON_OPEN", "value": "true"}
+      ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
@@ -813,7 +836,108 @@ aws logs tail /ecs/doc-parser-app --follow
 
 ---
 
-## 18. CI/CD Flow Reference
+## 18. Troubleshooting Common Deployment Issues
+
+### A — Task fails to start: `AccessDeniedException` on Secrets Manager
+
+**Symptom:** Service shows `runningCount: 0` and `failedTasks > 0`. CI/CD loop never stabilises. The task stops before any container launches.
+
+**Diagnose:**
+```bash
+# Find the stopped task ARN
+aws ecs list-tasks --cluster doc-parser-cluster \
+  --service-name doc-parser-app --desired-status STOPPED \
+  --region us-east-1
+
+# Get the exact failure reason
+aws ecs describe-tasks --cluster doc-parser-cluster \
+  --tasks <task-arn> --region us-east-1 \
+  --query 'tasks[0].{stopCode:stopCode,reason:stoppedReason}'
+```
+
+**What you'll see:**
+```
+stopCode: TaskFailedToStart
+reason: ...not authorized to perform: secretsmanager:GetSecretValue on resource: doc-parser/openai-api-key
+```
+
+**Fix:** Re-attach the inline policy to the execution role:
+```bash
+aws iam put-role-policy \
+  --role-name doc-parser-ecs-task-execution \
+  --policy-name secrets-manager-read \
+  --policy-document "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [{
+      \"Effect\": \"Allow\",
+      \"Action\": [\"secretsmanager:GetSecretValue\"],
+      \"Resource\": \"arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:doc-parser/*\"
+    }]
+  }"
+```
+
+ECS retries automatically after the policy is attached — no redeployment needed.
+
+---
+
+### B — ALB health checks timing out: `Target.Timeout`
+
+**Symptom:** Task is RUNNING and app logs show uvicorn started on port 8000, but the ALB target stays `unhealthy — Target.Timeout`. No HTTP requests appear in the app logs at all.
+
+**Diagnose:**
+```bash
+# Step 1 — confirm the target is unhealthy
+aws elbv2 describe-target-health \
+  --target-group-arn <tg-arn> --region us-east-1 \
+  --query 'TargetHealthDescriptions[*].{target:Target.Id,state:TargetHealth.State,reason:TargetHealth.Reason}'
+
+# Step 2 — get the running task's ENI
+aws ecs describe-tasks --cluster doc-parser-cluster \
+  --tasks <task-id> --region us-east-1 \
+  --query 'tasks[0].attachments[0].details'
+
+# Step 3 — find the security group on that ENI
+aws ec2 describe-network-interfaces \
+  --network-interface-ids <eni-id> --region us-east-1 \
+  --query 'NetworkInterfaces[0].Groups'
+
+# Step 4 — check inbound rules (port 8000 from ALB will be missing)
+aws ec2 describe-security-groups \
+  --group-ids <ecs-sg-id> --region us-east-1 \
+  --query 'SecurityGroups[0].IpPermissions'
+```
+
+**What you'll see:** port `8000` is absent from the inbound rules.
+
+**Fix:** Add the missing rule:
+```bash
+ALB_SG=$(aws elbv2 describe-load-balancers --names doc-parser-alb \
+  --region us-east-1 --query 'LoadBalancers[0].SecurityGroups[0]' --output text)
+
+aws ec2 authorize-security-group-ingress \
+  --group-id <ecs-sg-id> \
+  --protocol tcp --port 8000 \
+  --source-group $ALB_SG \
+  --region us-east-1
+```
+
+Takes effect immediately — no redeployment needed. The target flips to healthy within ~2 minutes once the ALB can reach port 8000.
+
+---
+
+### C — Qdrant NFS warning on EFS (not a fatal error)
+
+**Symptom:** Qdrant container logs show:
+```
+ERROR qdrant: Filesystem check failed for storage path ./storage.
+Details: NFS may cause data corruption due to inconsistent file locking
+```
+
+This is **expected and harmless**. Qdrant detects that EFS is NFS-backed and warns about file locking. The task definition already sets `QDRANT__STORAGE__SKIP_FILESYNC_ON_OPEN=true` to bypass the fatal check. Qdrant starts normally. No action needed.
+
+---
+
+## 19. CI/CD Flow Reference
 
 ```
 Push to any branch / PR opened
@@ -837,7 +961,7 @@ Every deployment registers a new ECS task definition revision, enabling clean ro
 
 ---
 
-## 19. Rollback Procedure
+## 20. Rollback Procedure
 
 ```bash
 # List recent task definition revisions
@@ -872,7 +996,7 @@ echo "Rollback complete."
 
 ---
 
-## 20. Cost Overview — What This Infrastructure Charges Per Month
+## 21. Cost Overview — What This Infrastructure Charges Per Month
 
 > **Read this before leaving the infrastructure running overnight or over a weekend.**
 
@@ -906,7 +1030,7 @@ The moment the ECS service is running, AWS charges accumulate every hour — eve
 
 ---
 
-## 21. How to Stop the Infrastructure (Save Money, Keep Data)
+## 22. How to Stop the Infrastructure (Save Money, Keep Data)
 
 Use this when you want to **pause** the deployment — stop all charges from Fargate and the ALB, but keep your EFS data (Qdrant vectors + Ollama model) intact so you can resume later without re-ingesting documents or re-downloading the model.
 
@@ -976,7 +1100,7 @@ echo "ALB deleted. Hourly ALB charge stopped."
 
 ---
 
-## 22. How to Restart the Infrastructure
+## 23. How to Restart the Infrastructure
 
 When you want to bring everything back up, follow these steps in order.
 
@@ -1074,7 +1198,7 @@ curl -s "http://$NEW_DNS/health" | python3 -m json.tool
 
 ---
 
-## 23. How to Tear Down Everything (Full Deletion)
+## 24. How to Tear Down Everything (Full Deletion)
 
 > **Warning — this is irreversible.** All Qdrant vector data, all ingested documents, and all infrastructure will be permanently deleted. You will need to start from Phase 1 of this guide to redeploy.
 
