@@ -85,11 +85,11 @@
         {"name": "QDRANT__STORAGE__SKIP_FILESYNC_ON_OPEN", "value": "true"}
       ],
       "healthCheck": {
-        "command":     ["CMD-SHELL", "wget -qO /dev/null http://localhost:6333/healthz || exit 1"],
+        "command":     ["CMD-SHELL", "bash -c 'echo -n > /dev/tcp/localhost/6333' 2>/dev/null || exit 1"],
         "interval":    15,
         "timeout":     5,
         "retries":     3,
-        "startPeriod": 30
+        "startPeriod": 45
       },
       "logConfiguration": {
         "logDriver": "awslogs",
@@ -116,11 +116,11 @@
         {"name": "OLLAMA_HOST", "value": "0.0.0.0"}
       ],
       "healthCheck": {
-        "command":     ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"],
+        "command":     ["CMD-SHELL", "bash -c 'echo -n > /dev/tcp/localhost/11434' 2>/dev/null || exit 1"],
         "interval":    15,
         "timeout":     5,
         "retries":     3,
-        "startPeriod": 30
+        "startPeriod": 60
       },
       "logConfiguration": {
         "logDriver": "awslogs",
