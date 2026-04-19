@@ -538,7 +538,9 @@ This task runs three containers:
 > - `memory: 16384` (16 GB) — required to run Ollama + Qdrant + app concurrently
 > - `PARSER_BACKEND=ollama` — uses local Ollama for PDF parsing, no Z.AI key needed
 > - `QDRANT__STORAGE__SKIP_FILESYNC_ON_OPEN=true` — suppresses Qdrant's NFS warning on EFS (harmless, see Section 18C)
-> - `app` depends on qdrant and ollama with condition `START` (not `HEALTHY`) — app starts as soon as both containers launch
+> - `app` depends on qdrant and ollama with condition `HEALTHY` — app only starts after both pass health checks
+> - Qdrant healthCheck uses `wget` (not `curl` — curl is not available in the qdrant image)
+> - Ollama healthCheck uses `curl` (available in the ollama image)
 > - Qdrant image pinned to `v1.17.0` for API compatibility
 
 ```bash
@@ -610,8 +612,8 @@ cat > /tmp/app-task-def.json << EOF
         "startPeriod": 60
       },
       "dependsOn": [
-        {"containerName": "qdrant", "condition": "START"},
-        {"containerName": "ollama", "condition": "START"}
+        {"containerName": "qdrant", "condition": "HEALTHY"},
+        {"containerName": "ollama", "condition": "HEALTHY"}
       ]
     },
     {
@@ -629,6 +631,13 @@ cat > /tmp/app-task-def.json << EOF
       "environment": [
         {"name": "QDRANT__STORAGE__SKIP_FILESYNC_ON_OPEN", "value": "true"}
       ],
+      "healthCheck": {
+        "command":     ["CMD-SHELL", "wget -qO /dev/null http://localhost:6333/healthz || exit 1"],
+        "interval":    15,
+        "timeout":     5,
+        "retries":     3,
+        "startPeriod": 30
+      },
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
@@ -653,6 +662,13 @@ cat > /tmp/app-task-def.json << EOF
       "environment": [
         {"name": "OLLAMA_HOST", "value": "0.0.0.0"}
       ],
+      "healthCheck": {
+        "command":     ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"],
+        "interval":    15,
+        "timeout":     5,
+        "retries":     3,
+        "startPeriod": 30
+      },
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {

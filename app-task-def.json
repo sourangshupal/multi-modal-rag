@@ -65,8 +65,8 @@
         "startPeriod": 60
       },
       "dependsOn": [
-        {"containerName": "qdrant", "condition": "START"},
-        {"containerName": "ollama", "condition": "START"}
+        {"containerName": "qdrant", "condition": "HEALTHY"},
+        {"containerName": "ollama", "condition": "HEALTHY"}
       ]
     },
     {
@@ -84,6 +84,13 @@
       "environment": [
         {"name": "QDRANT__STORAGE__SKIP_FILESYNC_ON_OPEN", "value": "true"}
       ],
+      "healthCheck": {
+        "command":     ["CMD-SHELL", "wget -qO /dev/null http://localhost:6333/healthz || exit 1"],
+        "interval":    15,
+        "timeout":     5,
+        "retries":     3,
+        "startPeriod": 30
+      },
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
@@ -108,6 +115,13 @@
       "environment": [
         {"name": "OLLAMA_HOST", "value": "0.0.0.0"}
       ],
+      "healthCheck": {
+        "command":     ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"],
+        "interval":    15,
+        "timeout":     5,
+        "retries":     3,
+        "startPeriod": 30
+      },
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
